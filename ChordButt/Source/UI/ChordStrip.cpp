@@ -323,6 +323,16 @@ void ChordStrip::commit()
     refresh();
 }
 
+void ChordStrip::syncIfStale()
+{
+    if (vis.size() != processor.strip().slots().size())
+    {
+        reordering = false;
+        downSlot = -1;
+        refresh();
+    }
+}
+
 void ChordStrip::refresh()
 {
     const auto& slots = processor.strip().slots();
@@ -623,6 +633,7 @@ void ChordStrip::paint (Graphics& g)
 
 void ChordStrip::mouseDown (const MouseEvent& e)
 {
+    syncIfStale();
     downSlot = slotAt (e.position);
     downPart = partAt (downSlot, e.position);
     reordering = false;
@@ -631,6 +642,7 @@ void ChordStrip::mouseDown (const MouseEvent& e)
 
 void ChordStrip::mouseDrag (const MouseEvent& e)
 {
+    syncIfStale();
     if (downSlot < 0 || downPart != Part::body || externalDrag)
         return;
 
@@ -661,6 +673,7 @@ void ChordStrip::mouseDrag (const MouseEvent& e)
 
 void ChordStrip::mouseUp (const MouseEvent& e)
 {
+    syncIfStale();
     const int from = downSlot;
     downSlot = -1;
 
@@ -724,6 +737,7 @@ void ChordStrip::mouseExit (const MouseEvent&)
 
 bool ChordStrip::tickAnimations (float dt)
 {
+    syncIfStale();
     bool moving = false;
 
     const bool playingNow = processor.preview().isPlaying();

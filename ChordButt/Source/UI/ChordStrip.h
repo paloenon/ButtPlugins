@@ -103,7 +103,8 @@ private:
     void removeSlot (int index);
     void cycleLength (int index);
     int computeDropIndex() const;
-    void commit();                                       // stripChanged + local refresh
+    void commit();
+    void syncIfStale();                                  // strip changed elsewhere and refresh() has not run yet                                       // stripChanged + local refresh
     void startExternalDrag (const juce::var& description, const juce::String& label);
 
     ChordButtProcessor& processor;
