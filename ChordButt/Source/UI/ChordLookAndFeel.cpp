@@ -44,7 +44,9 @@ void ChordLookAndFeel::drawRotarySlider (Graphics& g, int x, int y, int width, i
                                          float startAngle, float endAngle, Slider& slider)
 {
     const float glow = AnimUtil::property (slider, LnfProps::glow);
-    const float enabledAlpha = slider.isEnabled() ? 1.0f : 0.4f;
+    const float enabledAlpha = 0.4f + 0.6f * AnimUtil::property (slider, LnfProps::enabled, slider.isEnabled() ? 1.0f : 0.0f);
+    if (slider.getProperties().contains (LnfProps::pos))
+        pos = AnimUtil::property (slider, LnfProps::pos);   // smoothed position (programmatic changes glide)
 
     auto area = Rectangle<int> (x, y, width, height).toFloat();
     const float size = jmin (area.getWidth(), area.getHeight());
@@ -91,7 +93,7 @@ void ChordLookAndFeel::drawRotarySlider (Graphics& g, int x, int y, int width, i
 
 void ChordLookAndFeel::drawComboBox (Graphics& g, int width, int height, bool, int, int, int, int, ComboBox& box)
 {
-    const float hover = jmax (AnimUtil::property (box, LnfProps::hover), box.isPopupActive() ? 1.0f : 0.0f);
+    const float hover = AnimUtil::property (box, LnfProps::hover);   // the Anim already targets 1 while the popup is open
     auto r = Rectangle<float> ((float) width, (float) height).reduced (0.5f);
 
     g.setColour (Theme::surface2);
@@ -133,21 +135,21 @@ void ChordLookAndFeel::positionComboBoxText (ComboBox& box, Label& label)
 
 Font ChordLookAndFeel::getComboBoxFont (ComboBox&) { return Theme::value(); }
 
-void ChordLookAndFeel::drawButtonBackground (Graphics& g, Button& b, const Colour&, bool, bool isButtonDown)
+void ChordLookAndFeel::drawButtonBackground (Graphics& g, Button& b, const Colour&, bool, bool)
 {
     const float hover = AnimUtil::property (b, LnfProps::hover);
     const float on = AnimUtil::property (b, LnfProps::on);
+    const float down = AnimUtil::property (b, LnfProps::down);
+    const float alpha = 0.4f + 0.6f * AnimUtil::property (b, LnfProps::enabled, b.isEnabled() ? 1.0f : 0.0f);
     auto r = b.getLocalBounds().toFloat().reduced (0.5f);
 
-    // Body: surface2, blending to accent as the toggle opens.
-    auto fill = Theme::surface2.interpolatedWith (Theme::accent, on);
-    if (isButtonDown)
-        fill = fill.darker (0.12f);
-    g.setColour (fill);
+    // Body: surface2, blending to accent as the toggle opens; darkens smoothly while pressed.
+    auto fill = Theme::surface2.interpolatedWith (Theme::accent, on).darker (0.12f * down);
+    g.setColour (fill.withMultipliedAlpha (alpha));
     g.fillRoundedRectangle (r, Theme::cornerRadius);
 
     auto border = Theme::line.interpolatedWith (Theme::dim, 0.45f * hover).interpolatedWith (Theme::accent, on);
-    g.setColour (border);
+    g.setColour (border.withMultipliedAlpha (alpha));
     g.drawRoundedRectangle (r, Theme::cornerRadius, Theme::lineWidth);
 }
 
@@ -160,8 +162,7 @@ void ChordLookAndFeel::drawButtonText (Graphics& g, TextButton& b, bool, bool)
     const float x = jlimit (0.0f, 1.0f, (on - 0.3f) / 0.4f);
     const float toDark = x * x * (3.0f - 2.0f * x);
     auto colour = Theme::dim.interpolatedWith (Theme::text, jmax (hover, on)).interpolatedWith (Theme::bg, toDark);
-    if (! b.isEnabled())
-        colour = colour.withMultipliedAlpha (0.4f);
+    colour = colour.withMultipliedAlpha (0.4f + 0.6f * AnimUtil::property (b, LnfProps::enabled, b.isEnabled() ? 1.0f : 0.0f));
 
     g.setColour (colour);
     g.setFont (getTextButtonFont (b, b.getHeight()));
@@ -191,7 +192,21 @@ GlowSlider::GlowSlider()
 bool GlowSlider::tickAnimations (float dt)
 {
     glow.setTarget ((forcedHighlight || isMouseOverOrDragging (true)) && isEnabled() ? 1.0f : 0.0f);
-    return AnimUtil::tickProperty (*this, glow, LnfProps::glow, dt);
+    enabled.setTarget (isEnabled() ? 1.0f : 0.0f);
+    pos.setTarget ((float) valueToProportionOfLength (getValue()));
+
+    // Programmatic changes (automation, state load, per-chord override) glide; a continuous knob
+    // under the mouse follows it directly, stepped knobs glide between their detents.
+    if (! primed || (isMouseButtonDown() && getInterval() <= 0.0))
+        pos.snap (pos.target);
+    if (! primed)
+        enabled.snap (enabled.target);
+    primed = true;
+
+    const bool g = AnimUtil::tickProperty (*this, glow, LnfProps::glow, dt);
+    const bool e = AnimUtil::tickProperty (*this, enabled, LnfProps::enabled, dt);
+    const bool p = AnimUtil::tickProperty (*this, pos, LnfProps::pos, dt);
+    return g || e || p;
 }
 
 AnimatedComboBox::AnimatedComboBox (const String& prefixLabel)
@@ -215,9 +230,69 @@ AnimatedTextButton::AnimatedTextButton (const String& text)
 
 bool AnimatedTextButton::tickAnimations (float dt)
 {
-    hover.setTarget (forcedHighlight || isMouseOver (true) ? 1.0f : 0.0f);
+    hover.setTarget ((forcedHighlight || isMouseOver (true)) && isEnabled() ? 1.0f : 0.0f);
     on.setTarget (getToggleState() ? 1.0f : 0.0f);
+    down.setTarget (isDown() ? 1.0f : 0.0f);
+    enabled.setTarget (isEnabled() ? 1.0f : 0.0f);
+    if (! primed)
+        enabled.snap (enabled.target);
+    primed = true;
+
     const bool h = AnimUtil::tickProperty (*this, hover, LnfProps::hover, dt);
     const bool o = AnimUtil::tickProperty (*this, on, LnfProps::on, dt);
-    return h || o;
+    const bool d = AnimUtil::tickProperty (*this, down, LnfProps::down, dt);
+    const bool e = AnimUtil::tickProperty (*this, enabled, LnfProps::enabled, dt);
+    return h || o || d || e;
+}
+
+// ---------------------------------------------------------------------------------------------
+
+LabelledKnob::LabelledKnob (const String& text)
+{
+    setInterceptsMouseClicks (false, true);
+    label.set (text, false);
+    knob.addListener (this);
+    addAndMakeVisible (knob);
+}
+
+LabelledKnob::~LabelledKnob() { knob.removeListener (this); }
+
+void LabelledKnob::setLabel (const String& text, bool useAccent)
+{
+    label.set (text);
+    accent.setTarget (useAccent ? 1.0f : 0.0f);
+}
+
+void LabelledKnob::resized()
+{
+    knob.setBounds (getLocalBounds().removeFromTop (knobSize).withSizeKeepingCentre (knobSize, knobSize));
+}
+
+void LabelledKnob::paint (Graphics& g)
+{
+    auto r = getLocalBounds().withTrimmedTop (knobSize).toFloat();
+    const float alpha = 0.4f + 0.6f * AnimUtil::property (knob, LnfProps::enabled, 1.0f);
+    auto labelRow = r.removeFromTop (14.0f);
+
+    const auto labelColour = Theme::dim.interpolatedWith (Theme::accent, accent.value);
+    g.setFont (Theme::label());
+    label.draw ([&] (const String& s, float a, float dy)
+    {
+        g.setColour (labelColour.withMultipliedAlpha (a * alpha));
+        g.drawText (s, labelRow.translated (0.0f, dy), Justification::centred, false);
+    });
+
+    if (formatValue)
+    {
+        g.setFont (Theme::uiFont (11.0f, "Regular"));
+        g.setColour (Theme::text.withAlpha (0.75f * alpha));
+        g.drawText (formatValue (knob.getValue()), r.removeFromTop (16.0f), Justification::centred, false);
+    }
+}
+
+bool LabelledKnob::tickAnimations (float dt)
+{
+    const bool l = label.tick (dt);
+    const bool a = AnimUtil::tick (accent, dt);
+    return l || a;
 }

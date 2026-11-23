@@ -6,6 +6,7 @@
 #include "Plugin/PluginProcessor.h"
 #include "UI/ChordLookAndFeel.h"
 #include "UI/Theme.h"
+#include "Core/Palette.h"
 
 using namespace juce;
 
@@ -73,6 +74,56 @@ namespace
         }
         ~EditorFixture() { editor.reset(); }
 
+        void settle (float seconds = 1.0f) { advance (seconds, [&] (float dt) { editor->advanceAnimations (dt); }); }
+
+        void setParam (const String& id, float value)
+        {
+            auto* param = processor.apvts.getParameter (id);
+            param->setValueNotifyingHost (param->convertTo0to1 (value));
+        }
+
+        // Appends palette pads (complexity-0 chords, as a pad click stores them) with the given lengths.
+        void addPads (std::initializer_list<int> pads, std::initializer_list<double> lengths = {})
+        {
+            const auto base = cb::buildPalette (processor.scale(), 0);
+            auto len = lengths.begin();
+            for (int pad : pads)
+            {
+                cb::StripSlot slot;
+                slot.chord = base[(size_t) pad].chord;
+                if (len != lengths.end())
+                    slot.lengthBars = *len++;
+                processor.strip().append (slot);
+            }
+            processor.stripChanged();
+            editor->refreshAll();
+        }
+
+        // Runs the preview engine (no host: 120 BPM) until the playhead reaches `beat`.
+        void playTo (double beat)
+        {
+            processor.prepareToPlay (44100.0, 512);
+            processor.preview().play();
+            AudioBuffer<float> audio (0, 512);
+            for (int i = 0; i < 100000 && ! (processor.preview().isPlaying() && processor.preview().playheadBeat() >= beat); ++i)
+            {
+                MidiBuffer midi;
+                processor.processBlock (audio, midi);
+            }
+        }
+
+        void printDrag (const String& description)
+        {
+            StringArray files;
+            bool canMove = true;
+            DragAndDropTarget::SourceDetails details (description, nullptr, {});
+            const bool ok = editor->shouldDropFilesWhenDraggedExternally (details, files, canMove);
+            std::cout << "drag " << description << ": " << (ok ? "yes" : "no");
+            for (auto& f : files)
+                std::cout << " -> " << f << " (" << File (f).getSize() << " bytes)";
+            std::cout << (canMove ? " canMove" : "") << "\n";
+        }
+
         ChordButtProcessor processor;
         std::unique_ptr<ChordButtEditor> editor;
     };
@@ -123,6 +174,74 @@ namespace
             return snap (host, dir, name);
         }
 
+        if (name == "pads")
+        {
+            EditorFixture f;   // default: A minor, complexity 1
+            std::cout << "pads:";
+            for (auto& pc : f.processor.currentPalette())
+                std::cout << " " << cb::chordName (cb::resolve (pc.chord, f.processor.tonic())) << " (" << pc.chord.roman << ")";
+            std::cout << "\n";
+            bool ok = snap (*f.editor, dir, "pads");
+            f.editor->getPadGrid().getPad (0).setHighlighted (true);
+            f.editor->advanceAnimations (0.06f);
+            ok = snap (*f.editor, dir, "pads-press-60ms") && ok;
+            f.settle();
+            ok = snap (*f.editor, dir, "pads-pressed") && ok;
+            // Key change: labels cross-fade.
+            f.editor->getPadGrid().getPad (0).setHighlighted (false);
+            f.setParam ("root", 0.0f);
+            f.setParam ("complexity", 2.0f);
+            f.editor->refreshAll();
+            f.editor->advanceAnimations (0.06f);
+            ok = snap (*f.editor, dir, "pads-relabel-60ms") && ok;
+            return ok;
+        }
+        if (name == "strip")
+        {
+            EditorFixture f;
+            f.addPads ({ 0, 5, 2, 6 });   // i VI III VII
+            f.editor->getChordStrip().setSelected (1);
+            f.processor.strip().setInversionOverride (1, 2);
+            f.processor.stripChanged();
+            f.editor->refreshAll();
+            f.playTo (8.0);               // mid-strip (4 x 1 bar = 16 beats)
+            f.settle();
+            f.printDrag ("strip");
+            f.printDrag ("slot:1");
+            return snap (*f.editor, dir, "strip");
+        }
+        if (name == "mode-chords" || name == "mode-rhythm" || name == "mode-arp")
+        {
+            EditorFixture f;
+            f.addPads ({ 0, 3, 4, 0 }, { 1.0, 0.5, 0.5, 2.0 });
+            f.settle();
+            const int mode = name == "mode-chords" ? 0 : (name == "mode-rhythm" ? 1 : 2);
+            f.setParam ("mode", (float) mode);
+            f.editor->advanceAnimations (0.06f);
+            bool ok = snap (*f.editor, dir, name + "-60ms");
+            f.settle();
+            return snap (*f.editor, dir, name) && ok;
+        }
+        if (name == "empty-strip")
+        {
+            EditorFixture f;
+            f.printDrag ("strip");
+            f.editor->getChordStrip().getDragButton().setHighlighted (true);
+            f.settle();
+            return snap (*f.editor, dir, "empty-strip");
+        }
+        if (name == "full-strip-flash")
+        {
+            EditorFixture f;
+            f.addPads ({ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 0, 4 },
+                       { 0.5, 0.5, 1, 0.5, 0.5, 1, 2, 0.5, 0.5, 0.5, 1, 0.5, 0.5, 0.5, 1, 1 });
+            f.settle();
+            f.editor->getChordStrip().addChord (cb::buildPalette (f.processor.scale(), 0)[0].chord);   // 17th: refused
+            std::cout << "full strip: " << f.processor.strip().slots().size() << " slots after 17th add\n";
+            f.editor->advanceAnimations (0.1f);
+            return snap (*f.editor, dir, "full-strip-flash");
+        }
+
         std::cerr << "unknown scenario: " << name << "\n";
         return false;
     }
@@ -132,7 +251,7 @@ int main (int argc, char* argv[])
 {
     if (argc < 2)
     {
-        std::cerr << "usage: ChordButtSnapshot <outDir> [default|knob|hover-knob|mid-anim|library-open|hover-header ...]\n";
+        std::cerr << "usage: ChordButtSnapshot <outDir> [default|knob|hover-knob|mid-anim|library-open|hover-header|pads|strip|mode-chords|mode-rhythm|mode-arp|empty-strip|full-strip-flash ...]\n";
         return 2;
     }
 
@@ -145,7 +264,8 @@ int main (int argc, char* argv[])
     for (int i = 2; i < argc; ++i)
         scenarios.add (argv[i]);
     if (scenarios.isEmpty())
-        scenarios.addArray ({ "default", "knob", "hover-knob", "mid-anim", "library-open", "hover-header" });
+        scenarios.addArray ({ "default", "knob", "hover-knob", "mid-anim", "library-open", "hover-header", "pads", "strip",
+                              "mode-chords", "mode-rhythm", "mode-arp", "empty-strip", "full-strip-flash" });
 
     bool ok = true;
     for (auto& s : scenarios)

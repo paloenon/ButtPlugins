@@ -9,6 +9,9 @@ namespace LnfProps
     inline const juce::Identifier hover  { "hover" };    // hover highlight of combos / buttons
     inline const juce::Identifier on     { "on" };       // toggle-button fill
     inline const juce::Identifier prefix { "prefix" };   // small dim label drawn inside a ComboBox
+    inline const juce::Identifier down   { "down" };     // button pressed (fill darkens)
+    inline const juce::Identifier enabled { "enabled" }; // 1 = enabled, 0 = disabled (dimmed); default 1
+    inline const juce::Identifier pos    { "pos" };      // animated knob position 0..1 (absent: slider's own)
 }
 
 class ChordLookAndFeel : public juce::LookAndFeel_V4
@@ -45,8 +48,8 @@ public:
     bool tickAnimations (float dt) override;
 
 private:
-    cb::Anim glow;
-    bool forcedHighlight = false;
+    cb::Anim glow, pos, enabled;
+    bool forcedHighlight = false, primed = false;
 };
 
 // ComboBox with an animated hover border and an optional dim prefix label ("KEY", "SCALE").
@@ -69,6 +72,33 @@ public:
     bool tickAnimations (float dt) override;
 
 private:
-    cb::Anim hover, on;
-    bool forcedHighlight = false;
+    cb::Anim hover, on, down, enabled;
+    bool forcedHighlight = false, primed = false;
+};
+
+// A GlowSlider with a small-caps label and a value line underneath. The label cross-fades when it
+// changes and can switch to accent (e.g. "VOICING · CHORD 3"). The component itself ignores the
+// mouse, so a wide label may overlap its neighbours without stealing their clicks.
+class LabelledKnob : public juce::Component, public Animated, private juce::Slider::Listener
+{
+public:
+    static constexpr int knobSize = 56, textHeight = 32;
+
+    explicit LabelledKnob (const juce::String& label);
+    ~LabelledKnob() override;
+
+    GlowSlider& getSlider() { return knob; }
+    void setLabel (const juce::String& text, bool accent);
+    std::function<juce::String (double)> formatValue;   // value line; empty function = no value line
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    bool tickAnimations (float dt) override;
+
+private:
+    void sliderValueChanged (juce::Slider*) override { repaint(); }
+
+    GlowSlider knob;
+    FadeText label;
+    cb::Anim accent;
 };
