@@ -38,6 +38,10 @@ endif()
 juce_add_binary_data(ChordButtData SOURCES Resources/library.json)
 
 file(GLOB CHORD_CORE_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/Source/Core/*.cpp)
+file(GLOB CHORD_UI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/Source/UI/*.cpp)
+set(CHORD_PLUGIN_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/Source/Plugin/PluginProcessor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/Source/Plugin/PluginEditor.cpp)
 
 juce_add_plugin(ChordButt
     COMPANY_NAME            "MyPlugins"
@@ -56,8 +60,8 @@ juce_add_plugin(ChordButt
 )
 
 target_sources(ChordButt PRIVATE
-    Source/Plugin/PluginProcessor.cpp
-    Source/Plugin/PluginEditor.cpp
+    ${CHORD_PLUGIN_SOURCES}
+    ${CHORD_UI_SOURCES}
     ${CHORD_CORE_SOURCES}
 )
 target_include_directories(ChordButt PRIVATE Source)
@@ -78,6 +82,33 @@ target_link_libraries(ChordButt
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags
 )
+
+# Snapshot tool: renders the editor (and single widgets) to PNGs for headless visual checks.
+juce_add_console_app(ChordButtSnapshot PRODUCT_NAME "ChordButtSnapshot")
+target_sources(ChordButtSnapshot PRIVATE
+    Tools/Snapshot.cpp
+    ${CHORD_PLUGIN_SOURCES}
+    ${CHORD_UI_SOURCES}
+    ${CHORD_CORE_SOURCES}
+)
+target_include_directories(ChordButtSnapshot PRIVATE Source)
+target_compile_definitions(ChordButtSnapshot PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+)
+target_link_libraries(ChordButtSnapshot
+    PRIVATE
+        ChordButtData
+        juce::juce_audio_utils
+        juce::juce_data_structures
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)
+if(APPLE)
+    add_custom_command(TARGET ChordButtSnapshot POST_BUILD
+        COMMAND codesign -s - -f $<TARGET_FILE:ChordButtSnapshot>)
+endif()
 
 # Unit tests (core logic only, no GUI)
 file(GLOB CHORD_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/Tests/*.cpp)
