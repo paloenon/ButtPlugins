@@ -135,14 +135,114 @@ namespace
             EditorFixture f;
             return snap (*f.editor, dir, "default");
         }
-        if (name == "library-open")
+        if (name == "library-closed")
         {
             EditorFixture f;
-            f.editor->getHeader().setLibraryOpen (true);
+            f.addPads ({ 0, 5, 2, 6 });
+            f.settle();
+            std::cout << "library-closed: drawer visible " << f.editor->getLibraryDrawer().isVisible() << "\n";
+            return snap (*f.editor, dir, "library-closed");
+        }
+        if (name == "library-mid")
+        {
+            EditorFixture f;
+            f.addPads ({ 0, 5, 2, 6 });
+            f.settle();
+            f.editor->setLibraryOpen (true);
+            advance (0.06f, [&] (float dt) { f.editor->advanceAnimations (dt); });
+            std::cout << "library-mid: open amount " << f.editor->getLibraryDrawer().getOpenAmount()
+                      << ", header toggle " << f.editor->getHeader().isLibraryOpen() << "\n";
+            const auto& backdrop = f.editor->getLibraryDrawer().getBackdrop();
+            std::cout << "library-mid: backdrop " << backdrop.getWidth() << "x" << backdrop.getHeight() << "\n";
+            bool ok = backdrop.isValid() && writePng (backdrop, dir.getChildFile ("library-backdrop-blurred.png"));
+            return snap (*f.editor, dir, "library-mid") && ok;
+        }
+        if (name == "library-open-lofi-melancholic")
+        {
+            EditorFixture f;
+            auto& drawer = f.editor->getLibraryDrawer();
+            f.editor->setLibraryOpen (true);
+            drawer.setGenre ("Lo-Fi");
+            drawer.setMood ("Melancholic");
+            f.settle();
+            std::cout << "lofi+melancholic: " << drawer.getNumResults() << " results\n";
+            bool ok = snap (*f.editor, dir, "library-open-lofi-melancholic");
+
+            // Row click: loads into the strip, drawer stays open, the row gets the accent outline.
+            drawer.load (*drawer.getResult (1));
+            f.editor->refreshAll();
             f.editor->advanceAnimations (0.06f);
-            bool ok = snap (*f.editor, dir, "library-open-60ms");
-            advance (1.0f, [&] (float dt) { f.editor->advanceAnimations (dt); });
-            return snap (*f.editor, dir, "library-open") && ok;
+            ok = snap (*f.editor, dir, "library-load-60ms") && ok;
+            f.settle();
+            std::cout << "loaded \"" << drawer.getResult (1)->name << "\": strip " << f.processor.strip().slots().size()
+                      << " slots, scale " << cb::scaleName (f.processor.scale()) << ", drawer open " << drawer.isOpen() << "\n";
+            return snap (*f.editor, dir, "library-loaded") && ok;
+        }
+        if (name == "library-preview")
+        {
+            EditorFixture f;
+            f.addPads ({ 0, 5 });
+            auto& drawer = f.editor->getLibraryDrawer();
+            f.editor->setLibraryOpen (true);
+            drawer.setGenre ("Lo-Fi");
+            drawer.setMood ("Melancholic");
+            f.settle();
+
+            f.processor.prepareToPlay (44100.0, 512);
+            const auto* entry = drawer.getResult (0);
+            drawer.togglePreview (*entry);
+            AudioBuffer<float> audio (0, 512);
+            int noteOns = 0;
+            auto block = [&]
+            {
+                MidiBuffer midi;
+                f.processor.processBlock (audio, midi);
+                for (const auto m : midi)
+                    noteOns += m.getMessage().isNoteOn() ? 1 : 0;
+            };
+            for (int i = 0; i < 2000 && f.processor.preview().playheadBeat() < 5.0; ++i)
+                block();
+            f.settle (0.5f);
+            std::cout << "library-preview: previewing " << drawer.isPreviewing (entry) << ", engine playing "
+                      << f.processor.preview().isPlaying() << ", beat " << f.processor.preview().playheadBeat()
+                      << ", note-ons " << noteOns << ", strip defers (no playhead) " << f.editor->getChordStrip().isExternalPreview() << "\n";
+            bool ok = snap (*f.editor, dir, "library-preview");
+
+            // Let the one-shot finish: the drawer restores the strip's sequence.
+            for (int i = 0; i < 20000 && f.processor.preview().isPlaying(); ++i)
+                block();
+            f.settle (0.5f);
+            std::cout << "library-preview end: previewing " << drawer.isPreviewing() << ", engine playing "
+                      << f.processor.preview().isPlaying() << "\n";
+
+            // Strip Play while a preview runs: restores first, then plays the strip.
+            drawer.togglePreview (*entry);
+            for (int i = 0; i < 20; ++i) block();
+            f.editor->getChordStrip().getPlayButton().onClick();
+            for (int i = 0; i < 20; ++i) block();
+            f.settle (0.2f);
+            std::cout << "strip play during preview: previewing " << drawer.isPreviewing() << ", engine playing "
+                      << f.processor.preview().isPlaying() << "\n";
+            f.processor.preview().stop();
+            return ok;
+        }
+        if (name == "library-empty")
+        {
+            EditorFixture f;
+            auto& drawer = f.editor->getLibraryDrawer();
+            f.editor->setLibraryOpen (true);
+            drawer.setGenre ("Jazz");
+            drawer.setSearchText ("zzzz");
+            f.settle();
+            std::cout << "library-empty: " << drawer.getNumResults() << " results\n";
+            bool ok = snap (*f.editor, dir, "library-empty");
+
+            // Esc closes and un-toggles LIBRARY.
+            f.editor->keyPressed (KeyPress (KeyPress::escapeKey));
+            f.settle();
+            std::cout << "after Esc: drawer open " << drawer.isOpen() << ", visible " << drawer.isVisible()
+                      << ", header toggle " << f.editor->getHeader().isLibraryOpen() << "\n";
+            return snap (*f.editor, dir, "library-after-esc") && ok;
         }
         if (name == "hover-header")
         {
@@ -300,7 +400,7 @@ int main (int argc, char* argv[])
 {
     if (argc < 2)
     {
-        std::cerr << "usage: ChordButtSnapshot <outDir> [default|knob|hover-knob|mid-anim|library-open|hover-header|pads|strip|mode-chords|mode-rhythm|mode-arp|empty-strip|full-strip-flash|reorder-shrink ...]\n";
+        std::cerr << "usage: ChordButtSnapshot <outDir> [default|knob|hover-knob|mid-anim|library-closed|library-mid|library-open-lofi-melancholic|library-preview|library-empty|hover-header|pads|strip|mode-chords|mode-rhythm|mode-arp|empty-strip|full-strip-flash|reorder-shrink ...]\n";
         return 2;
     }
 
@@ -313,7 +413,8 @@ int main (int argc, char* argv[])
     for (int i = 2; i < argc; ++i)
         scenarios.add (argv[i]);
     if (scenarios.isEmpty())
-        scenarios.addArray ({ "default", "knob", "hover-knob", "mid-anim", "library-open", "hover-header", "pads", "strip",
+        scenarios.addArray ({ "default", "knob", "hover-knob", "mid-anim", "library-closed", "library-mid",
+                              "library-open-lofi-melancholic", "library-preview", "library-empty", "hover-header", "pads", "strip",
                               "mode-chords", "mode-rhythm", "mode-arp", "empty-strip", "full-strip-flash", "reorder-shrink" });
 
     bool ok = true;

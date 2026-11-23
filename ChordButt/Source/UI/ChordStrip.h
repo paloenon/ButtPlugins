@@ -54,6 +54,12 @@ public:
     void setSelected (int index);          // -1 = none
     std::function<void (int)> onSelectionChanged;
 
+    // Another sequence (the library drawer's one-shot preview) owns the preview engine: the strip then
+    // shows no playhead and does not stop it. onBeforePlay runs first on a Play/Stop click so that
+    // owner can stop and restore the strip's sequence.
+    std::function<bool()> isExternalPreview;
+    std::function<void()> onBeforePlay;
+
     // For the editor's DragAndDropContainer: writes the MIDI file for a drag started here
     // ("strip" = whole progression, "slot:<n>" = that chord only). False = no drag.
     bool prepareExternalDrag (const juce::var& description, juce::StringArray& files);
@@ -109,6 +115,7 @@ private:
     void commit();                                       // stripChanged + local refresh
     void syncIfStale();                                  // strip changed elsewhere and refresh() has not run yet
     void cancelGesture();                                // drop any reorder in progress (indices may be stale)
+    bool externalPreview() const { return isExternalPreview != nullptr && isExternalPreview(); }
     bool validSlot (int index) const { return index >= 0 && index < (int) vis.size(); }
     void startExternalDrag (const juce::var& description, const juce::String& label);
 

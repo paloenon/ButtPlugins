@@ -139,6 +139,8 @@ ChordStrip::ChordStrip (ChordButtProcessor& p)
     {
         if (processor.strip().slots().empty())
             return;
+        if (onBeforePlay)
+            onBeforePlay();
         if (processor.preview().isPlaying())
             processor.preview().stop();
         else
@@ -387,7 +389,7 @@ void ChordStrip::refresh()
     playButton.setEnabled (n > 0);
     dragButton.setEnabled (n > 0);
     empty.setTarget (n == 0 ? 1.0f : 0.0f);
-    if (n == 0 && processor.preview().isPlaying())
+    if (n == 0 && processor.preview().isPlaying() && ! externalPreview())
         processor.preview().stop();
     repaint();
 }
@@ -768,7 +770,7 @@ bool ChordStrip::tickAnimations (float dt)
     syncIfStale();
     bool moving = false;
 
-    const bool playingNow = processor.preview().isPlaying();
+    const bool playingNow = processor.preview().isPlaying() && ! externalPreview();
     const double beat = processor.preview().playheadBeat();
     if (playingNow != isPlaying || (playingNow && ! exactlyEqual (beat, playheadBeat)))
         moving = true;

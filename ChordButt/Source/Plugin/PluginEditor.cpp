@@ -26,6 +26,7 @@ ChordButtEditor::ChordButtEditor (ChordButtProcessor& p)
       voicingPanel (p),
       stylePanel (p),
       chordStrip (p),
+      libraryDrawer (p),
       vblank (this, [this] (double timestampSec)
               {
                   const double dt = lastFrameTime < 0.0 ? 1.0 / 60.0 : timestampSec - lastFrameTime;
@@ -39,8 +40,15 @@ ChordButtEditor::ChordButtEditor (ChordButtProcessor& p)
     chordStrip.onSelectionChanged = [this] (int index) { voicingPanel.setSelectedSlot (index); };
     voicingPanel.onStripEdited = [this] { chordStrip.refresh(); };
 
+    header.onLibraryToggled = [this] (bool open) { setLibraryOpen (open); };
+    libraryDrawer.onCloseRequested = [this] { setLibraryOpen (false); };
+    chordStrip.isExternalPreview = [this] { return libraryDrawer.isPreviewing(); };
+    chordStrip.onBeforePlay = [this] { libraryDrawer.stopPreview(); };
+
     for (auto* c : std::initializer_list<juce::Component*> { &header, &padGrid, &voicingPanel, &stylePanel, &chordStrip })
         addAndMakeVisible (c);
+    addChildComponent (libraryDrawer);   // hidden until opened
+    setWantsKeyboardFocus (true);
 
     chordProcessor.stateBroadcaster.addChangeListener (this);
     setSize (editorWidth, editorHeight);
@@ -62,6 +70,37 @@ void ChordButtEditor::advanceAnimations (float dtSeconds)
 void ChordButtEditor::visibilityChanged()
 {
     lastFrameTime = -1.0;   // a re-shown editor starts with a normal frame step, not the hidden time
+}
+
+bool ChordButtEditor::keyPressed (const juce::KeyPress& key)
+{
+    if (key == juce::KeyPress::escapeKey && libraryDrawer.isOpen())
+    {
+        setLibraryOpen (false);
+        return true;
+    }
+    return false;
+}
+
+void ChordButtEditor::setLibraryOpen (bool open)
+{
+    header.setLibraryOpen (open);
+    if (open == libraryDrawer.isOpen())
+        return;
+
+    if (open)
+    {
+        // Snapshot of what the drawer will cover (drawer itself hidden), blurred once by the drawer.
+        const bool wasVisible = libraryDrawer.isVisible();
+        libraryDrawer.setVisible (false);
+        auto behind = createComponentSnapshot (drawerArea(), true, 1.0f);
+        libraryDrawer.setVisible (wasVisible);
+        libraryDrawer.setOpen (true, behind);
+    }
+    else
+    {
+        libraryDrawer.setOpen (false);
+    }
 }
 
 void ChordButtEditor::refreshAll()
@@ -107,4 +146,5 @@ void ChordButtEditor::resized()
     voicingPanel.setBounds (panels.removeFromLeft (shapeWidth));
     panels.removeFromLeft (12);
     stylePanel.setBounds (panels);
+    libraryDrawer.setBounds (drawerArea());
 }
