@@ -39,6 +39,9 @@ public:
     void allNotesOff();      // releases sequence + audition notes and stops playback
 
     bool isPlaying() const   { return playingFlag.load(); }
+    // Generation of the most recently published sequence (each setSequence increments it). Lets an
+    // owner of a temporary sequence notice that someone else replaced it. Message thread.
+    uint64_t sequenceGeneration() const { return generationCounter.load(); }
     double playheadBeat() const { return playheadFlag.load(); }
 
     // ---- audio thread ----

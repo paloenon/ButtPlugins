@@ -14,10 +14,7 @@ namespace
     const String dash = String::fromUTF8 (" \xe2\x80\x93 ");    // " – "
     const String dot = String::fromUTF8 (" \xc2\xb7 ");         // " · "
 
-    const char* const paramIds[] = { "root", "scale", "inversion", "spread", "octave", "complexity", "mode", "rhythm",
-                                     "arp", "rate", "gate", "swing", "arpOctaves", "humanize" };
-
-    float raw (ChordButtProcessor& p, const char* id) { return p.apvts.getRawParameterValue (id)->load(); }
+        float raw (ChordButtProcessor& p, const char* id) { return p.apvts.getRawParameterValue (id)->load(); }
 
     cb::VoicingParams globalVoicing (ChordButtProcessor& p)
     {
@@ -558,7 +555,7 @@ String LibraryDrawer::chordLine (const cb::LibraryEntry& e) const
     const int tonic = processor.tonic();
     StringArray names;
     for (auto& c : e.chords)
-        names.add (cb::chordNameInKey (cb::resolve (c, tonic), tonic, e.scale));
+        names.add (cb::chordNameInKey (c, tonic, e.scale));
     return Theme::pretty (names.joinIntoString (dash));
 }
 
@@ -572,12 +569,15 @@ String LibraryDrawer::detailLine (const cb::LibraryEntry& e) const
 
 // ---- preview / load ----
 
-String LibraryDrawer::paramSignature() const
+void LibraryDrawer::checkPreviewStillOurs()
 {
-    String s;
-    for (auto* id : paramIds)
-        s << raw (processor, id) << ";";
-    return s << (int64) processor.currentStyle().seed;
+    // Anything that published another sequence (strip edit, parameter change, state recall) ended the
+    // preview. The engine is now looping the strip's sequence without the user having pressed Play, so
+    // stop it; the strip's sequence is already the current one.
+    if (previewEntry == nullptr || processor.preview().sequenceGeneration() == previewGeneration)
+        return;
+    previewEntry = nullptr;
+    processor.preview().stop();
 }
 
 void LibraryDrawer::togglePreview (const cb::LibraryEntry& e)
@@ -602,10 +602,10 @@ void LibraryDrawer::startPreview (const cb::LibraryEntry& e)
 
     previewBeats = jmax (strip.totalBeats(), 1.0);
     engine.setSequence (events, previewBeats, false);
+    previewGeneration = engine.sequenceGeneration();
     engine.play();
     previewEntry = &e;
     previewAge = 0.0f;
-    previewSignature = paramSignature();
 }
 
 bool LibraryDrawer::stopPreview()
@@ -639,9 +639,7 @@ void LibraryDrawer::load (const cb::LibraryEntry& e)
 
 void LibraryDrawer::changeListenerCallback (ChangeBroadcaster*)
 {
-    // A parameter change rebuilt the engine's sequence from the strip: the preview is over.
-    if (previewEntry != nullptr && paramSignature() != previewSignature)
-        stopPreview();
+    checkPreviewStillOurs();
 
     // The loaded outline only stays while the strip still is that progression.
     if (loaded != nullptr && ! processor.strip().toValueTree().isEquivalentTo (cb::toStrip (*loaded).toValueTree()))
@@ -658,6 +656,7 @@ bool LibraryDrawer::tickAnimations (float dt)
     applyOpenAmount();
 
     // One-shot preview finished (grace period: the audio thread may not have picked up play() yet).
+    checkPreviewStillOurs();
     if (previewEntry != nullptr)
     {
         previewAge += dt;

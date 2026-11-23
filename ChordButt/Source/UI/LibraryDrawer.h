@@ -142,7 +142,7 @@ private:
     void paintPanel (juce::Graphics&);
     void refilter (bool newContent);   // newContent: filters changed by the user (scrolls to the top)
     juce::String countText() const;
-    juce::String paramSignature() const;
+    void checkPreviewStillOurs();
     void applyOpenAmount();
 
     ChordButtProcessor& processor;
@@ -156,7 +156,7 @@ private:
     const cb::LibraryEntry* previewEntry = nullptr;
     double previewBeats = 0.0;
     float previewAge = 0.0f;
-    juce::String previewSignature;
+    uint64_t previewGeneration = 0;   // engine sequence generation our one-shot was published as
     int generation = 0;
 
     bool open = false;

@@ -82,15 +82,15 @@ namespace
             param->setValueNotifyingHost (param->convertTo0to1 (value));
         }
 
-        // Appends palette pads (complexity-0 chords, as a pad click stores them) with the given lengths.
+        // Appends palette pads (PadChord::base, as a pad click stores it) with the given lengths.
         void addPads (std::initializer_list<int> pads, std::initializer_list<double> lengths = {})
         {
-            const auto base = cb::buildPalette (processor.scale(), 0);
+            const auto base = processor.currentPalette();
             auto len = lengths.begin();
             for (int pad : pads)
             {
                 cb::StripSlot slot;
-                slot.chord = base[(size_t) pad].chord;
+                slot.chord = base[(size_t) pad].base;
                 if (len != lengths.end())
                     slot.lengthBars = *len++;
                 processor.strip().append (slot);
@@ -224,7 +224,62 @@ namespace
             std::cout << "strip play during preview: previewing " << drawer.isPreviewing() << ", engine playing "
                       << f.processor.preview().isPlaying() << "\n";
             f.processor.preview().stop();
+            for (int i = 0; i < 5; ++i) block();
+
+            // Regression (review R15): editing the strip while a preview plays ends the preview; the
+            // engine must not keep looping the strip, and the row must not stay on ■.
+            for (int variant = 0; variant < 3; ++variant)
+            {
+                drawer.togglePreview (*entry);
+                for (int i = 0; i < 20; ++i) block();
+                if (variant == 0)        // remove a slot (as ChordStrip::commit does)
+                {
+                    f.processor.strip().remove (0);
+                    f.processor.stripChanged();
+                }
+                else if (variant == 1)   // remove the last slot too: strip becomes empty
+                {
+                    while (! f.processor.strip().slots().empty())
+                        f.processor.strip().remove (0);
+                    f.processor.stripChanged();
+                }
+                else                     // host state recall (rebuilds the preview directly)
+                {
+                    MemoryBlock state;
+                    f.processor.getStateInformation (state);
+                    f.processor.setStateInformation (state.getData(), (int) state.getSize());
+                }
+                f.editor->advanceAnimations (frame);
+                for (int i = 0; i < 20; ++i) block();
+                f.settle (0.3f);
+                const bool pass = ! drawer.isPreviewing() && ! f.processor.preview().isPlaying()
+                                  && ! f.editor->getChordStrip().isExternalPreview();
+                std::cout << "preview interrupted (variant " << variant << "): " << (pass ? "PASS" : "FAIL")
+                          << " (previewing " << drawer.isPreviewing() << ", engine playing "
+                          << f.processor.preview().isPlaying() << ")\n";
+                ok = pass && ok;
+                if (variant == 1)
+                    f.addPads ({ 0, 5 });
+            }
             return ok;
+        }
+        if (name == "library-search-sharp")
+        {
+            EditorFixture f;   // A minor
+            auto& drawer = f.editor->getLibraryDrawer();
+            f.editor->setLibraryOpen (true);
+            drawer.setSearchText ("a#");
+            f.settle();
+            std::cout << "search a#:";
+            for (int i = 0; i < drawer.getNumResults(); ++i)
+                std::cout << " " << drawer.getResult (i)->id;
+            std::cout << "\n";
+            f.setParam ("scale", (float) (int) cb::Scale::Dorian);
+            std::cout << "dorian pads:";
+            for (auto& pc : f.processor.currentPalette())
+                std::cout << " " << cb::chordNameInKey (pc.chord, f.processor.tonic(), f.processor.scale()) << " (" << pc.chord.roman << ")";
+            std::cout << "\n";
+            return snap (*f.editor, dir, "library-search-sharp");
         }
         if (name == "library-empty")
         {
@@ -279,7 +334,7 @@ namespace
             EditorFixture f;   // default: A minor, complexity 1
             std::cout << "pads:";
             for (auto& pc : f.processor.currentPalette())
-                std::cout << " " << cb::chordNameInKey (cb::resolve (pc.chord, f.processor.tonic()), f.processor.tonic(), f.processor.scale()) << " (" << pc.chord.roman << ")";
+                std::cout << " " << cb::chordNameInKey (pc.chord, f.processor.tonic(), f.processor.scale()) << " (" << pc.chord.roman << ")";
             std::cout << "\n";
             bool ok = snap (*f.editor, dir, "pads");
             f.editor->getPadGrid().getPad (0).setHighlighted (true);
@@ -400,7 +455,7 @@ int main (int argc, char* argv[])
 {
     if (argc < 2)
     {
-        std::cerr << "usage: ChordButtSnapshot <outDir> [default|knob|hover-knob|mid-anim|library-closed|library-mid|library-open-lofi-melancholic|library-preview|library-empty|hover-header|pads|strip|mode-chords|mode-rhythm|mode-arp|empty-strip|full-strip-flash|reorder-shrink ...]\n";
+        std::cerr << "usage: ChordButtSnapshot <outDir> [default|knob|hover-knob|mid-anim|library-closed|library-mid|library-open-lofi-melancholic|library-preview|library-search-sharp|library-empty|hover-header|pads|strip|mode-chords|mode-rhythm|mode-arp|empty-strip|full-strip-flash|reorder-shrink ...]\n";
         return 2;
     }
 
@@ -414,7 +469,7 @@ int main (int argc, char* argv[])
         scenarios.add (argv[i]);
     if (scenarios.isEmpty())
         scenarios.addArray ({ "default", "knob", "hover-knob", "mid-anim", "library-closed", "library-mid",
-                              "library-open-lofi-melancholic", "library-preview", "library-empty", "hover-header", "pads", "strip",
+                              "library-open-lofi-melancholic", "library-preview", "library-search-sharp", "library-empty", "hover-header", "pads", "strip",
                               "mode-chords", "mode-rhythm", "mode-arp", "empty-strip", "full-strip-flash", "reorder-shrink" });
 
     bool ok = true;
