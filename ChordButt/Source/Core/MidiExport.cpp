@@ -49,7 +49,8 @@ juce::MidiFile buildMidiFile (const std::vector<NoteEvent>& events, double bpm)
         ordered.add (track.getEventPointer (i)->message);
     std::stable_sort (ordered.begin(), ordered.end(), [] (const juce::MidiMessage& a, const juce::MidiMessage& b)
     {
-        if (a.getTimeStamp() != b.getTimeStamp()) return a.getTimeStamp() < b.getTimeStamp();
+        if (a.getTimeStamp() < b.getTimeStamp()) return true;
+        if (b.getTimeStamp() < a.getTimeStamp()) return false;
         auto rank = [] (const juce::MidiMessage& m) { return m.isMetaEvent() ? 0 : (m.isNoteOff() ? 1 : 2); };
         return rank (a) < rank (b);
     });

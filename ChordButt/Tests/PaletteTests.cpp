@@ -75,17 +75,17 @@ TEST_CASE ("Palette: roman numerals")
 
 TEST_CASE ("Palette: complexity levels")
 {
-    REQUIRE (applyComplexity ({ 0, Quality::Maj }, Scale::Major, 2).quality == Quality::Maj9);
-    REQUIRE (applyComplexity ({ 0, Quality::Maj }, Scale::Major, 3).quality == Quality::Maj13);
-    REQUIRE (applyComplexity ({ 2, Quality::Min }, Scale::Major, 3).quality == Quality::Min11);
-    REQUIRE (applyComplexity ({ 7, Quality::Dom7 }, Scale::Major, 1).quality == Quality::Dom7);
-    REQUIRE (applyComplexity ({ 7, Quality::Dom7 }, Scale::Major, 3).quality == Quality::Dom13);
-    REQUIRE (applyComplexity ({ 4, Quality::Min }, Scale::Major, 3).quality == Quality::Min7);
-    REQUIRE (applyComplexity ({ 11, Quality::Dim }, Scale::Major, 3).quality == Quality::HalfDim7);
-    REQUIRE (applyComplexity ({ 3, Quality::Aug }, Scale::HarmonicMinor, 3).quality == Quality::Aug);
-    REQUIRE (applyComplexity ({ 0, Quality::Maj }, Scale::Major, 0).quality == Quality::Maj);
-    REQUIRE (applyComplexity ({ 0, Quality::Sus2 }, Scale::Major, 3).quality == Quality::Sus2);
-    REQUIRE (applyComplexity ({ 7, Quality::Sus4 }, Scale::Major, 1).quality == Quality::Dom7sus4);
+    REQUIRE (applyComplexity ({ 0, Quality::Maj, -1, {} }, Scale::Major, 2).quality == Quality::Maj9);
+    REQUIRE (applyComplexity ({ 0, Quality::Maj, -1, {} }, Scale::Major, 3).quality == Quality::Maj13);
+    REQUIRE (applyComplexity ({ 2, Quality::Min, -1, {} }, Scale::Major, 3).quality == Quality::Min11);
+    REQUIRE (applyComplexity ({ 7, Quality::Dom7, -1, {} }, Scale::Major, 1).quality == Quality::Dom7);
+    REQUIRE (applyComplexity ({ 7, Quality::Dom7, -1, {} }, Scale::Major, 3).quality == Quality::Dom13);
+    REQUIRE (applyComplexity ({ 4, Quality::Min, -1, {} }, Scale::Major, 3).quality == Quality::Min7);
+    REQUIRE (applyComplexity ({ 11, Quality::Dim, -1, {} }, Scale::Major, 3).quality == Quality::HalfDim7);
+    REQUIRE (applyComplexity ({ 3, Quality::Aug, -1, {} }, Scale::HarmonicMinor, 3).quality == Quality::Aug);
+    REQUIRE (applyComplexity ({ 0, Quality::Maj, -1, {} }, Scale::Major, 0).quality == Quality::Maj);
+    REQUIRE (applyComplexity ({ 0, Quality::Sus2, -1, {} }, Scale::Major, 3).quality == Quality::Sus2);
+    REQUIRE (applyComplexity ({ 7, Quality::Sus4, -1, {} }, Scale::Major, 1).quality == Quality::Dom7sus4);
 }
 
 TEST_CASE ("Palette: never a minor ninth unless explicit Dom7b9")
@@ -107,7 +107,7 @@ TEST_CASE ("Palette: fix round 1 regressions")
 {
     REQUIRE (buildPalette (Scale::HarmonicMinor, 1)[1].chord.quality == Quality::HalfDim7);
     REQUIRE (buildPalette (Scale::HarmonicMinor, 1)[0].chord.quality == Quality::MinMaj7);
-    REQUIRE (applyComplexity ({ 10, Quality::Dom7 }, Scale::Major, 2).quality == Quality::Dom9);
+    REQUIRE (applyComplexity ({ 10, Quality::Dom7, -1, {} }, Scale::Major, 2).quality == Quality::Dom9);
     auto p = buildPalette (Scale::Major, 1);
     REQUIRE (p[9].chord.quality == Quality::Min7);
     REQUIRE (chordName (resolve (p[9].chord, 0)) == "Fm7");

@@ -77,7 +77,7 @@ TEST_CASE ("Theory: suffixes and parseQuality")
 
 TEST_CASE ("Theory: chord names")
 {
-    REQUIRE (chordName (resolve ({ 9, Quality::Min9 }, 0)) == "Am9");
+    REQUIRE (chordName (resolve ({ 9, Quality::Min9, -1, {} }, 0)) == "Am9");
     REQUIRE (chordName (Chord { 0, Quality::Maj, 7 }) == "C/G");
     REQUIRE (chordName (Chord { 10, Quality::Maj7 }) == "Bbmaj7");
     REQUIRE (noteName (3) == "Eb");
@@ -86,7 +86,7 @@ TEST_CASE ("Theory: chord names")
     auto c = resolve ({ 7, Quality::Dom7, 2, "V7" }, 5);
     REQUIRE (c.rootPc == 0);
     REQUIRE (c.bassPc == 7);
-    REQUIRE (resolve ({ 7, Quality::Maj }, 5).bassPc == -1);
+    REQUIRE (resolve ({ 7, Quality::Maj, -1, {} }, 5).bassPc == -1);
 }
 
 TEST_CASE ("Theory: romanToOffset")

@@ -61,8 +61,8 @@ TEST_CASE ("PluginState: round trip through XML string")
     REQUIRE (before.size() == after.size());
     for (size_t i = 0; i < before.size(); ++i)
     {
-        REQUIRE (before[i].startBeat == after[i].startBeat);
-        REQUIRE (before[i].lengthBeats == after[i].lengthBeats);
+        REQUIRE (juce::exactlyEqual (before[i].startBeat, after[i].startBeat));
+        REQUIRE (juce::exactlyEqual (before[i].lengthBeats, after[i].lengthBeats));
         REQUIRE (before[i].note == after[i].note);
         REQUIRE (before[i].velocity == after[i].velocity);
     }

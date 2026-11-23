@@ -62,7 +62,7 @@ TEST_CASE ("Strip: ValueTree round-trip")
     for (size_t i = 0; i < 2; ++i)
     {
         REQUIRE (r.slots()[i].chord == s.slots()[i].chord);
-        REQUIRE (r.slots()[i].lengthBars == s.slots()[i].lengthBars);
+        REQUIRE (juce::exactlyEqual (r.slots()[i].lengthBars, s.slots()[i].lengthBars));
         REQUIRE (r.slots()[i].inversionOverride == s.slots()[i].inversionOverride);
     }
     REQUIRE (Strip::fromValueTree ({}).slots().empty());
@@ -97,7 +97,7 @@ TEST_CASE ("Strip: voiceStrip transposes by exactly the tonic difference")
     REQUIRE (a.size() == b.size());
     for (size_t i = 0; i < a.size(); ++i)
     {
-        REQUIRE (a[i].lengthBeats == b[i].lengthBeats);
+        REQUIRE (juce::exactlyEqual (a[i].lengthBeats, b[i].lengthBeats));
         REQUIRE (a[i].notes.size() == b[i].notes.size());
         for (size_t j = 0; j < a[i].notes.size(); ++j)
             REQUIRE (b[i].notes[j] - a[i].notes[j] == 2);

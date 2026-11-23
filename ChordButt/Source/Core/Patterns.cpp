@@ -272,7 +272,9 @@ std::vector<NoteEvent> generateEvents (const std::vector<VoicedSlot>& slots, con
     }
     std::stable_sort (out.begin(), out.end(), [] (const NoteEvent& a, const NoteEvent& b)
     {
-        return a.startBeat != b.startBeat ? a.startBeat < b.startBeat : a.note < b.note;
+        if (a.startBeat < b.startBeat) return true;
+        if (b.startBeat < a.startBeat) return false;
+        return a.note < b.note;
     });
     return out;
 }
