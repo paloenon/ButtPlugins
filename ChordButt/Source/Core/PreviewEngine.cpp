@@ -37,7 +37,7 @@ void PreviewEngine::prepare (double newSampleRate)
 
 void PreviewEngine::setSequence (std::shared_ptr<const Sequence> sequence, double lengthBeats, bool loop)
 {
-    auto compiled = std::make_shared<Compiled>();
+    auto compiled = std::make_unique<Compiled>();
     compiled->lengthBeats = lengthBeats > 0.0 ? lengthBeats : 0.0;
     compiled->loop = loop;
     compiled->generation = ++generationCounter;
@@ -66,24 +66,22 @@ void PreviewEngine::setSequence (std::shared_ptr<const Sequence> sequence, doubl
                           });
     }
 
-    std::shared_ptr<const Compiled> published = std::move (compiled);
-
-    // Retire the outgoing sequence, publish the new one, then destroy (here, on the message
-    // thread) every retired sequence older than the generation the audio thread has loaded.
-    // The audio thread only ever holds the generation it acknowledged or a newer one, and it
-    // stores the acknowledgement after dropping its previous copy, so it never frees one.
-    if (auto outgoing = std::atomic_load (&pending))
-        retired.push_back (std::move (outgoing));
-    std::atomic_store (&pending, published);
+    // Publish the new sequence (kept alive in `published`), then destroy (here, on the message
+    // thread) every sequence older than the generation the audio thread has acknowledged. The
+    // audio thread only reads the sequence it loaded during one process call and acknowledges its
+    // generation right after loading it, so it never reads an older one again; it frees nothing.
+    pending.store (compiled.get());
+    published.push_back (std::move (compiled));
 
     const auto ack = acknowledgedGeneration.load();
-    retired.erase (std::remove_if (retired.begin(), retired.end(),
-                                   [ack] (const std::shared_ptr<const Compiled>& c) { return c->generation < ack; }),
-                   retired.end());
+    published.erase (std::remove_if (published.begin(), published.end(),
+                                     [ack] (const std::unique_ptr<const Compiled>& c) { return c->generation < ack; }),
+                     published.end());
 }
 
 void PreviewEngine::play()
 {
+    ++requestCounter;
     playingFlag.store (true);
     playheadFlag.store (0.0);
     push ({ CommandType::Play, 0, {} });
@@ -98,6 +96,7 @@ void PreviewEngine::stop()
 
 void PreviewEngine::auditionOn (const std::vector<int>& notes)
 {
+    ++requestCounter;
     Command c { CommandType::AuditionOn, 0, {} };
     for (int n : notes)
     {
@@ -263,18 +262,60 @@ void PreviewEngine::applyPendingReleases (juce::MidiBuffer& midi)
 //==============================================================================
 // audio thread: rendering
 
-void PreviewEngine::seek (const Compiled& seq, double samplesPerBeat)
+void PreviewEngine::seek (const Compiled& seq, juce::MidiBuffer& midi, double samplesPerBeat)
 {
+    // Events before the playhead are skipped. Replaying them into per-pitch counters gives exactly
+    // the holds the sequence would have if it had played from beat 0 (offs sort before ons).
+    activeCount.fill (0);
     cursor = 0;
     while (cursor < seq.events.size() && offsetFor (seq.events[cursor].beat, playhead, samplesPerBeat) < 0)
-        ++cursor;
+    {
+        const auto& e = seq.events[cursor++];
+        auto& count = activeCount[(size_t) e.note];
+        if (e.isOff)
+        {
+            if (count > 0)
+                --count;
+        }
+        else if (count < 255)
+        {
+            ++count;
+            activeVelocity[(size_t) e.note] = (uint8_t) e.velocity;
+        }
+    }
     needsSeek = false;
+
+    // Reconcile what is sounding (from the previous sequence, or nothing) with what is active at the
+    // playhead: keep common pitches without retriggering (their holds now belong to the new notes,
+    // whose offs end them), end pitches that are no longer active, start the newly active ones.
+    for (size_t n = 0; n < 128; ++n)
+    {
+        const auto held = holds[seqSource][n];
+        const auto active = activeCount[n];
+        if (held == active)
+            continue;
+        if (active == 0)
+        {
+            holds[seqSource][n] = 0;
+            if (holds[auditionSource][n] == 0)
+                midi.addEvent (juce::MidiMessage::noteOff (midiChannel, (int) n), 0);
+        }
+        else if (held == 0)
+        {
+            noteOn (seqSource, (int) n, activeVelocity[n], midi, 0);
+            holds[seqSource][n] = active;
+        }
+        else
+        {
+            holds[seqSource][n] = active;
+        }
+    }
 }
 
 void PreviewEngine::render (const Compiled& seq, juce::MidiBuffer& midi, int numSamples, double samplesPerBeat)
 {
     if (needsSeek)
-        seek (seq, samplesPerBeat);
+        seek (seq, midi, samplesPerBeat);
 
     int segStart = 0;   // sample in this block where the playhead is at `playhead`
     int lastWrap = -1;
@@ -321,24 +362,32 @@ void PreviewEngine::render (const Compiled& seq, juce::MidiBuffer& midi, int num
     }
 }
 
+const PreviewEngine::Compiled* PreviewEngine::loadSequence()
+{
+    // Acknowledging right after the load: the message thread may then destroy anything older,
+    // which this thread will never read again.
+    const auto* seq = pending.load();
+    if (seq == nullptr)
+        return nullptr;
+    acknowledgedGeneration.store (seq->generation);
+    if (seq->generation != activeGeneration)
+    {
+        activeGeneration = seq->generation;
+        playhead = seq->lengthBeats > 0.0 ? std::fmod (playhead, seq->lengthBeats) : 0.0;
+        needsSeek = true;   // seek() reconciles the sounding notes with the new sequence (R16)
+    }
+    return seq;
+}
+
 void PreviewEngine::process (juce::MidiBuffer& midi, int numSamples, std::optional<double> hostBpm)
 {
     // 1. commands first, so setSequence(B) + play() is never started on the old sequence
     drainCommands (midi, false);
 
-    // 2. current sequence; acknowledge its generation (our previous copy is already released)
-    const auto seq = std::atomic_load (&pending);
-    if (seq != nullptr)
-    {
-        acknowledgedGeneration.store (seq->generation);
-        if (seq->generation != activeGeneration)
-        {
-            activeGeneration = seq->generation;
-            releaseSource (seqSource, midi, 0);
-            playhead = seq->lengthBeats > 0.0 ? std::fmod (playhead, seq->lengthBeats) : 0.0;
-            needsSeek = true;
-        }
-    }
+    // 2. current sequence
+    const auto* seq = loadSequence();
+    if (! playing)
+        releaseSource (seqSource, midi, 0);   // nothing of a sequence sounds while stopped
 
     // 3. sequence playback
     if (playing)
@@ -357,6 +406,7 @@ void PreviewEngine::processBypassed (juce::MidiBuffer& midi)
 {
     // Apply transport commands (audition note-ons are dropped), then release everything sounding.
     drainCommands (midi, true);
+    loadSequence();   // acknowledge, so retired sequences do not pile up while bypassed
     releaseAll (midi, 0);
     needsSeek = true;
 

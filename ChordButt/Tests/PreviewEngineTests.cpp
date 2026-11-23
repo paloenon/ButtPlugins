@@ -52,6 +52,25 @@ struct Rig
 };
 } // namespace
 
+namespace
+{
+// Per pitch, output must strictly alternate on/off starting with on; returns false otherwise.
+bool strictlyPaired (const std::vector<Ev>& events, bool requireAllReleased)
+{
+    int state[128] = {};
+    for (auto& e : events)
+    {
+        if (e.on)  { if (state[e.note] != 0) return false; state[e.note] = 1; }
+        else       { if (state[e.note] != 1) return false; state[e.note] = 0; }
+    }
+    if (requireAllReleased)
+        for (int s : state)
+            if (s != 0)
+                return false;
+    return true;
+}
+} // namespace
+
 TEST_CASE ("PreviewEngine: single note on at 0, off at 24000 across blocks", "[PreviewEngine]")
 {
     Rig r;
@@ -184,22 +203,117 @@ TEST_CASE ("PreviewEngine: play restarts from beat 0", "[PreviewEngine]")
     REQUIRE (r.eng.playheadBeat() == Catch::Approx (512.0 / 24000.0));
 }
 
-TEST_CASE ("PreviewEngine: setSequence while playing releases old notes without retriggering new ones", "[PreviewEngine]")
+TEST_CASE ("PreviewEngine: setSequence while playing swaps sounding notes in the same block", "[PreviewEngine]")
 {
+    // R16: a swap during playback must not leave silence until the next note-on.
     Rig r;
     r.eng.setSequence (Rig::seq ({ { 0.0, 4.0, 60, 100 } }), 4.0, true);
     r.eng.play();
     r.run (10);
     REQUIRE (r.events.size() == 1);
 
-    r.eng.setSequence (Rig::seq ({ { 0.0, 4.0, 64, 100 } }), 4.0, true);
+    r.eng.setSequence (Rig::seq ({ { 0.0, 4.0, 64, 90 } }), 4.0, true);
     const long swapAt = r.block * blockSize;
-    r.runUntil (100000);
+    r.run (1);
 
     REQUIRE (r.events.size() == 3);
     REQUIRE ((! r.events[1].on && r.events[1].note == 60 && r.events[1].pos == swapAt));
-    // 64 is not started mid-note; it starts at its next note-on (loop to beat 0 = 96000)
-    REQUIRE ((r.events[2].on && r.events[2].note == 64 && r.events[2].pos == 96000));
+    REQUIRE ((r.events[2].on && r.events[2].note == 64 && r.events[2].pos == swapAt && r.events[2].vel == 90));
+
+    r.runUntil (100000);   // loop end at 96000: 64 off, then on again
+    REQUIRE (r.events.size() == 5);
+    REQUIRE ((! r.events[3].on && r.events[3].note == 64 && r.events[3].pos == 96000));
+    REQUIRE ((r.events[4].on && r.events[4].note == 64 && r.events[4].pos == 96000));
+}
+
+TEST_CASE ("PreviewEngine: swap mid held chord keeps common pitches, starts new ones, ends old ones", "[PreviewEngine]")
+{
+    Rig r;
+    // C E G held for the whole bar
+    r.eng.setSequence (Rig::seq ({ { 0.0, 4.0, 60, 100 }, { 0.0, 4.0, 64, 100 }, { 0.0, 4.0, 67, 100 } }), 4.0, true);
+    r.eng.play();
+    r.run (10);
+    REQUIRE (r.events.size() == 3);
+
+    // re-voiced: C Eb G Bb; C now ends at beat 2 (its moved hold must end it there)
+    r.eng.setSequence (Rig::seq ({ { 0.0, 2.0, 60, 80 }, { 0.0, 4.0, 63, 80 }, { 0.0, 4.0, 67, 80 }, { 0.0, 4.0, 70, 80 } }), 4.0, true);
+    const long swapAt = r.block * blockSize;
+    const size_t before = r.events.size();
+    r.run (1);
+
+    std::vector<Ev> swapBlock (r.events.begin() + (long) before, r.events.end());
+    int on63 = 0, on70 = 0, off64 = 0, other = 0;
+    for (auto& e : swapBlock)
+    {
+        REQUIRE (e.pos == swapAt);
+        if (e.on && e.note == 63 && e.vel == 80) ++on63;
+        else if (e.on && e.note == 70 && e.vel == 80) ++on70;
+        else if (! e.on && e.note == 64) ++off64;
+        else ++other;
+    }
+    REQUIRE (on63 == 1);
+    REQUIRE (on70 == 1);
+    REQUIRE (off64 == 1);
+    REQUIRE (other == 0);   // common pitches 60 and 67: neither off nor retrigger
+
+    r.runUntil (50000);   // beat 2 = 48000: the new sequence's 60 ends the carried-over 60
+    REQUIRE ((! r.events.back().on && r.events.back().note == 60 && r.events.back().pos == 48000));
+
+    r.runUntil (120000);
+    r.eng.stop();
+    r.run (2);
+    REQUIRE (strictlyPaired (r.events, true));
+    int ons = 0, offs = 0;
+    for (auto& e : r.events)
+        (e.on ? ons : offs)++;
+    REQUIRE (ons == offs);
+}
+
+TEST_CASE ("PreviewEngine: swap with audition holds stays strictly paired", "[PreviewEngine]")
+{
+    Rig r;
+    r.eng.setSequence (Rig::seq ({ { 0.0, 4.0, 60, 100 }, { 0.0, 4.0, 64, 100 } }), 4.0, true);
+    r.eng.play();
+    r.run (2);
+    r.eng.auditionOn ({ 64, 67 });   // 64 shared with the sequence, 67 audition only
+    r.run (2);
+
+    // 64 leaves the sequence (audition still holds it), 67 joins it (already sounding)
+    r.eng.setSequence (Rig::seq ({ { 0.0, 4.0, 60, 100 }, { 0.0, 4.0, 67, 100 } }), 4.0, true);
+    const long swapAt = r.block * blockSize;
+    const size_t before = r.events.size();
+    r.run (1);
+    for (size_t i = before; i < r.events.size(); ++i)
+        REQUIRE ((r.events[i].note != 64 && r.events[i].note != 60 && r.events[i].pos == swapAt));
+
+    r.eng.auditionOff();   // 64 ends now; 67 stays (sequence holds it)
+    const long offAt = r.block * blockSize;
+    const size_t beforeOff = r.events.size();
+    r.run (1);
+    REQUIRE (r.events.size() == beforeOff + 1);
+    REQUIRE ((! r.events.back().on && r.events.back().note == 64 && r.events.back().pos == offAt));
+
+    r.runUntil (200000);
+    r.eng.stop();
+    r.run (2);
+    REQUIRE (strictlyPaired (r.events, true));
+}
+
+TEST_CASE ("PreviewEngine: many swaps per second stay strictly paired and never fall silent", "[PreviewEngine]")
+{
+    Rig r;
+    r.eng.setSequence (Rig::seq ({ { 0.0, 2.0, 60, 100 }, { 2.0, 2.0, 62, 100 } }), 4.0, true);
+    r.eng.play();
+    for (int i = 0; i < 200; ++i)
+    {
+        const int t = i % 3;   // transposed / re-timed variants, as a knob drag produces
+        r.eng.setSequence (Rig::seq ({ { 0.0, 2.0, 60 + t, 100 }, { 2.0, 1.0 + 0.5 * t, 62 + t, 100 }, { 1.0, 2.0, 67, 100 } }),
+                           4.0 - (double) t, true);
+        r.run (3);
+    }
+    r.eng.stop();
+    r.run (1);
+    REQUIRE (strictlyPaired (r.events, true));
 }
 
 TEST_CASE ("PreviewEngine: setSequence keeps playhead modulo the new length", "[PreviewEngine]")
@@ -394,24 +508,6 @@ TEST_CASE ("PreviewEngine: processBypassed releases everything once, then stays 
     }
 }
 
-namespace
-{
-// Per pitch, output must strictly alternate on/off starting with on; returns false otherwise.
-bool strictlyPaired (const std::vector<Ev>& events, bool requireAllReleased)
-{
-    int state[128] = {};
-    for (auto& e : events)
-    {
-        if (e.on)  { if (state[e.note] != 0) return false; state[e.note] = 1; }
-        else       { if (state[e.note] != 1) return false; state[e.note] = 0; }
-    }
-    if (requireAllReleased)
-        for (int s : state)
-            if (s != 0)
-                return false;
-    return true;
-}
-} // namespace
 
 TEST_CASE ("PreviewEngine: overlapping same-pitch sequence notes retrigger with strict on/off pairing", "[PreviewEngine]")
 {
@@ -502,4 +598,50 @@ TEST_CASE ("PreviewEngine: FIFO holds 64 commands and releases still apply when 
     for (auto& e : r.events)
         ons += e.on ? 1 : 0;
     REQUIRE (ons == 64);   // all 64 queued commands were accepted
+}
+
+TEST_CASE ("PreviewEngine: processBypassed acknowledges the published sequence", "[PreviewEngine]")
+{
+    // Retired sequences must not pile up while the plugin is bypassed.
+    Rig r;
+    r.eng.setSequence (Rig::seq ({ { 0.0, 1.0, 60, 100 } }), 4.0, true);
+    r.run (1);
+    const int before = PreviewEngine::compiledDestroyedCount();
+    for (int i = 0; i < 10; ++i)
+    {
+        r.eng.setSequence (Rig::seq ({ { 0.0, 1.0, 62 + i, 100 } }), 4.0, true);
+        juce::MidiBuffer b;
+        r.eng.processBypassed (b);
+    }
+    REQUIRE (PreviewEngine::compiledDestroyedCount() - before >= 9);
+}
+
+TEST_CASE ("PreviewEngine: requestStop from the audio thread stops playback in the next block", "[PreviewEngine]")
+{
+    Rig r;
+    r.eng.setSequence (Rig::seq ({ { 0.0, 4.0, 60, 100 }, { 0.0, 4.0, 64, 100 } }), 4.0, true);
+    r.eng.play();
+    r.eng.auditionOn ({ 72 });
+    r.run (4);
+    REQUIRE (r.events.size() == 3);
+
+    r.eng.requestStop();   // host transport started (audio thread)
+    const long at = r.block * blockSize;
+    r.run (100);
+    REQUIRE_FALSE (r.eng.isPlaying());
+    REQUIRE (r.eng.playheadBeat() == 0.0);
+    REQUIRE (r.events.size() == 5);   // both sequence notes off; the audition note keeps sounding
+    for (size_t i = 3; i < 5; ++i)
+        REQUIRE ((! r.events[i].on && r.events[i].note != 72 && r.events[i].pos == at));
+}
+
+TEST_CASE ("PreviewEngine: requestCount counts play and audition requests", "[PreviewEngine]")
+{
+    PreviewEngine eng;
+    const auto c0 = eng.requestCount();
+    eng.play();
+    eng.auditionOn ({ 60 });
+    eng.stop();
+    eng.auditionOff();
+    REQUIRE (eng.requestCount() == c0 + 2);
 }
