@@ -131,7 +131,7 @@ void PadGrid::refresh (bool animate)
             continue;
         }
         const auto& rel = palette[(size_t) i].chord;
-        pads[i]->setChord (Theme::pretty (cb::chordName (cb::resolve (rel, tonic))), Theme::pretty (rel.roman), animate);
+        pads[i]->setChord (Theme::pretty (cb::chordNameInKey (cb::resolve (rel, tonic), tonic, processor.scale())), Theme::pretty (rel.roman), animate);
     }
 }
 

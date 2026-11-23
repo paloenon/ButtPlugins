@@ -179,7 +179,7 @@ namespace
             EditorFixture f;   // default: A minor, complexity 1
             std::cout << "pads:";
             for (auto& pc : f.processor.currentPalette())
-                std::cout << " " << cb::chordName (cb::resolve (pc.chord, f.processor.tonic())) << " (" << pc.chord.roman << ")";
+                std::cout << " " << cb::chordNameInKey (cb::resolve (pc.chord, f.processor.tonic()), f.processor.tonic(), f.processor.scale()) << " (" << pc.chord.roman << ")";
             std::cout << "\n";
             bool ok = snap (*f.editor, dir, "pads");
             f.editor->getPadGrid().getPad (0).setHighlighted (true);

@@ -19,7 +19,14 @@ const std::vector<int>& qualityIntervals (Quality);
 std::string qualitySuffix (Quality);
 std::optional<Quality> parseQuality (const std::string&);
 
-std::string noteName (int pc);
+std::string noteName (int pc);   // fixed spelling (C# Eb F# Ab Bb), kept for parameter names / back-compat
+
+// Key-aware spelling. The tonic is spelled with sharps when the scale's parent major key is a sharp key
+// (G D A E B F#), otherwise with flats; every other note is spelled from its degree above the tonic
+// (b2 b3 3 4 #4 5 b6 6 b7 7), so the leading tone of A minor is G#, the IV of F major Bb and the
+// iii of E major G#. Spellings needing a double accidental, or E#/B#/Cb/Fb, fall back to the
+// key-side sharp/flat name.
+std::string noteNameInKey (int pc, int tonicPc, Scale);
 
 struct RelChord
 {
@@ -43,6 +50,9 @@ struct Chord
 
 Chord resolve (const RelChord&, int tonicPc);
 std::string chordName (const Chord&);
+// chordName with key-aware spelling; a slash bass that is a chord tone is spelled from the chord root
+// (E/G#, D/F#, Ab/C).
+std::string chordNameInKey (const Chord&, int tonicPc, Scale);
 
 // Accidentals are relative to the MAJOR scale degree. Trailing quality markers are ignored.
 std::optional<int> romanToOffset (const std::string&);

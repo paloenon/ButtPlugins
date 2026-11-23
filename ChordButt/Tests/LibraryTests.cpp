@@ -228,3 +228,21 @@ TEST_CASE ("Library: loading an entry sets scale, keeps root, replaces strip")
     REQUIRE (p.root == 4);
     REQUIRE (strip.toValueTree().isEquivalentTo (toStrip (e).toValueTree()));
 }
+
+TEST_CASE ("Library: search uses key-aware chord spelling")
+{
+    // In A, a raised seventh (G#) is found as "G#", never as "Ab".
+    const auto& lib = bundled();
+    size_t expected = 0;
+    for (const auto& e : lib.entries())
+        for (const auto& c : e.chords)
+            if (chordNameInKey (resolve (c, 9), 9, e.scale).find ("G#") != std::string::npos) { ++expected; break; }
+    REQUIRE (lib.filter ("", "", "g#", 9).size() == expected);
+    for (auto* e : lib.filter ("", "", "ab", 9))   // only by name, or a genuinely flat chord (e.g. bVI in A major = F, not Ab)
+    {
+        bool found = juce::String (e->name).containsIgnoreCase ("ab");
+        for (const auto& c : e->chords)
+            found = found || chordNameInKey (resolve (c, 9), 9, e->scale).find ("Ab") != std::string::npos;
+        REQUIRE (found);
+    }
+}

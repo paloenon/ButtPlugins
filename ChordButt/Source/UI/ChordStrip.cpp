@@ -302,7 +302,7 @@ String ChordStrip::slotName (int index, bool forFileName) const
     const auto& slot = processor.strip().slots()[(size_t) index];
     const int complexity = jlimit (0, 3, roundToInt (processor.apvts.getRawParameterValue ("complexity")->load()));
     const auto rel = cb::applyComplexity (slot.chord, processor.scale(), complexity);
-    auto name = Theme::pretty (cb::chordName (cb::resolve (rel, processor.tonic())));
+    auto name = Theme::pretty (cb::chordNameInKey (cb::resolve (rel, processor.tonic()), processor.tonic(), processor.scale()));
     return forFileName ? name.replaceCharacter ('/', '_') : name;
 }
 

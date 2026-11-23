@@ -105,3 +105,48 @@ TEST_CASE ("Theory: romanToOffset")
     REQUIRE_FALSE (romanToOffset ("x").has_value());
     REQUIRE_FALSE (romanToOffset ("").has_value());
 }
+
+TEST_CASE ("Theory: key-aware spelling")
+{
+    // A minor: leading tone with a sharp.
+    REQUIRE (chordNameInKey (Chord { 4, Quality::Maj, 8 }, 9, Scale::Minor) == "E/G#");
+    REQUIRE (chordNameInKey (Chord { 8, Quality::Dim7 }, 9, Scale::HarmonicMinor) == "G#\xC2\xB0" "7");
+    REQUIRE (noteNameInKey (8, 9, Scale::Minor) == "G#");
+    // F major: flat side.
+    REQUIRE (chordNameInKey (Chord { 10, Quality::Maj }, 5, Scale::Major) == "Bb");
+    // E major: sharp side.
+    REQUIRE (chordNameInKey (Chord { 8, Quality::Min }, 4, Scale::Major) == "G#m");
+    // D minor: raised seventh.
+    REQUIRE (chordNameInKey (Chord { 1, Quality::Dim }, 2, Scale::Minor) == "C#\xC2\xB0");
+
+    // Tonic spelling follows the key side; flat keys and borrowed chords stay flat.
+    REQUIRE (noteNameInKey (1, 1, Scale::Major) == "Db");
+    REQUIRE (noteNameInKey (1, 1, Scale::Minor) == "C#");       // C# minor (parent E major)
+    REQUIRE (noteNameInKey (6, 6, Scale::Major) == "F#");
+    REQUIRE (noteNameInKey (10, 10, Scale::Minor) == "Bb");      // Bb minor (parent Db major)
+    REQUIRE (chordNameInKey (Chord { 1, Quality::Maj7 }, 0, Scale::Minor) == "Dbmaj7");   // bII in C minor
+    REQUIRE (chordNameInKey (Chord { 8, Quality::Maj }, 0, Scale::Major) == "Ab");        // bVI in C major
+    REQUIRE (chordNameInKey (Chord { 10, Quality::Maj }, 7, Scale::Major) == "Bb");       // bIII in G major
+    REQUIRE (chordNameInKey (Chord { 3, Quality::Dom7 }, 0, Scale::Minor) == "Eb7");
+
+    // Slash basses that are chord tones are spelled from the chord root.
+    REQUIRE (chordNameInKey (Chord { 2, Quality::Maj, 6 }, 0, Scale::Major) == "D/F#");
+    REQUIRE (chordNameInKey (Chord { 8, Quality::Maj, 0 }, 0, Scale::Minor) == "Ab/C");
+    REQUIRE (chordNameInKey (Chord { 4, Quality::Maj, 8 }, 0, Scale::Major) == "E/G#");    // V/vi in C major
+    REQUIRE (chordNameInKey (Chord { 0, Quality::Maj, 2 }, 0, Scale::Major) == "C/D");     // non-chord-tone bass
+
+    // Unchanged for plain keys and back-compat noteName.
+    REQUIRE (chordNameInKey (Chord { 9, Quality::Min7 }, 9, Scale::Minor) == "Am7");
+    REQUIRE (noteName (8) == "Ab");
+
+    // Every pc in every key gets a single-accidental (or natural) name.
+    for (int tonic = 0; tonic < 12; ++tonic)
+        for (auto s : { Scale::Major, Scale::Minor, Scale::Dorian, Scale::Phrygian, Scale::Lydian, Scale::Mixolydian,
+                        Scale::HarmonicMinor, Scale::MelodicMinor })
+            for (int pc = 0; pc < 12; ++pc)
+            {
+                auto n = noteNameInKey (pc, tonic, s);
+                REQUIRE ((n.size() == 1 || n.size() == 2));
+                REQUIRE (std::string ("CDEFGAB").find (n[0]) != std::string::npos);
+            }
+}

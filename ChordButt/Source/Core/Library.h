@@ -27,7 +27,7 @@ public:
 
     const std::vector<LibraryEntry>& entries() const { return items; }
 
-    // "" = any. `search` matches the entry name or its chord names resolved at `tonicPc`
+    // "" = any. `search` matches the entry name or its chord names resolved at `tonicPc` (key-aware spelling)
     // (case-insensitive). tonicPc defaults to A (9), the plugin's default root.
     std::vector<const LibraryEntry*> filter (const std::string& genre, const std::string& mood,
                                              const std::string& search, int tonicPc = 9) const;

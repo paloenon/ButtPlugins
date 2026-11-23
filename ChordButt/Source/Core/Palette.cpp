@@ -184,7 +184,14 @@ std::vector<PadChord> buildPalette (Scale scale, int complexity)
         add (7, Quality::Dom7, "V7", "borrowed");
         add (5, Quality::Maj, "IV", "borrowed");
         add (1, Quality::Maj7, "bII", "colour");
-        add (0, Quality::Maj, "I", "borrowed");
+        // Picardy I: stays a major triad (only add9 from level 2) so it never turns into the same
+        // dominant seventh as the V/iv pad next to it.
+        {
+            RelChord picardy { 0, Quality::Maj, -1, "I" };
+            if (complexity >= 2 && inScale (scale, 2))
+                picardy.quality = Quality::Add9;
+            pads.push_back ({ picardy, "borrowed" });
+        }
         add (0, Quality::Dom7, "V/iv", "secondary");
         add (7, Quality::Sus4, "vsus4", "sus");
     }

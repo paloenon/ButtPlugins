@@ -127,6 +127,124 @@ std::string noteName (int pc)
     return names[mod12 (pc)];
 }
 
+namespace
+{
+constexpr int naturalPc[7] { 0, 2, 4, 5, 7, 9, 11 };   // C D E F G A B
+constexpr char letters[] = "CDEFGAB";
+
+int letterOfNatural (int pc)
+{
+    for (int i = 0; i < 7; ++i)
+        if (naturalPc[i] == pc)
+            return i;
+    return -1;
+}
+
+// Offset of the scale's parent major key above its tonic.
+int parentMajorOffset (Scale s)
+{
+    switch (s)
+    {
+        case Scale::Major:         return 0;
+        case Scale::Minor:
+        case Scale::HarmonicMinor:
+        case Scale::MelodicMinor:  return 3;
+        case Scale::Dorian:        return 10;
+        case Scale::Phrygian:      return 8;
+        case Scale::Lydian:        return 7;
+        case Scale::Mixolydian:    return 5;
+    }
+    return 0;
+}
+
+bool isSharpKey (int tonicPc, Scale s)
+{
+    switch (mod12 (tonicPc + parentMajorOffset (s)))
+    {
+        case 7: case 2: case 9: case 4: case 11: case 6: return true;
+        default: return false;
+    }
+}
+
+// Letter + one accidental for `pc` on `letter`; empty when that needs a double accidental or would be
+// one of the awkward enharmonics E#, B#, Cb, Fb.
+std::string spellOn (int letter, int pc)
+{
+    letter = ((letter % 7) + 7) % 7;
+    int acc = mod12 (pc - naturalPc[letter]);
+    if (acc > 6)
+        acc -= 12;
+    if (acc < -1 || acc > 1)
+        return {};
+    const char l = letters[letter];
+    if ((acc == 1 && (l == 'E' || l == 'B')) || (acc == -1 && (l == 'C' || l == 'F')))
+        return {};
+    return std::string (1, l) + (acc == 1 ? "#" : acc == -1 ? "b" : "");
+}
+
+std::string keySideName (int pc, bool sharps)
+{
+    static const char* sharpNames[12] { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+    static const char* flatNames[12] { "C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B" };
+    return (sharps ? sharpNames : flatNames)[mod12 (pc)];
+}
+
+int tonicLetter (int tonicPc, Scale s)
+{
+    tonicPc = mod12 (tonicPc);
+    const int natural = letterOfNatural (tonicPc);
+    if (natural >= 0)
+        return natural;
+    return isSharpKey (tonicPc, s) ? letterOfNatural (tonicPc - 1) : letterOfNatural (tonicPc + 1);
+}
+
+int letterOf (const std::string& name) { return (int) (std::strchr (letters, name[0]) - letters); }
+} // namespace
+
+std::string noteNameInKey (int pc, int tonicPc, Scale s)
+{
+    // Letter steps above the tonic for each semitone degree: 1 b2 2 b3 3 4 #4 5 b6 6 b7 7.
+    static const int degreeLetter[12] { 0, 1, 1, 2, 2, 3, 3, 4, 5, 5, 6, 6 };
+    const int degree = mod12 (pc - tonicPc);
+    auto name = spellOn (tonicLetter (tonicPc, s) + degreeLetter[degree], pc);
+    return name.empty() ? keySideName (pc, isSharpKey (tonicPc, s)) : name;
+}
+
+std::string chordNameInKey (const Chord& c, int tonicPc, Scale s)
+{
+    const auto root = noteNameInKey (c.rootPc, tonicPc, s);
+    auto name = root + qualitySuffix (c.quality);
+    if (c.bassPc < 0)
+        return name;
+
+    std::string bass;
+    const int interval = mod12 (c.bassPc - c.rootPc);
+    for (int tone : qualityIntervals (c.quality))
+    {
+        if (mod12 (tone) != interval)
+            continue;
+        // Letter steps of a chord tone above the root (3rds, 5ths, 7ths; 2/9, 4/11, 6/13).
+        int steps = 0;
+        switch (tone)
+        {
+            case 0: steps = 0; break;
+            case 2: case 14: case 13: case 15: steps = 1; break;
+            case 3: case 4: steps = 2; break;
+            case 5: case 17: case 18: steps = 3; break;
+            case 6: case 7: case 8: steps = 4; break;
+            case 9: case 21: steps = (c.quality == Quality::Dim7) ? 6 : 5; break;
+            case 10: case 11: steps = 6; break;
+            default: steps = -1; break;
+        }
+        if (steps >= 0)
+            bass = spellOn (letterOf (root) + steps, c.bassPc);
+        break;
+    }
+    if (bass.empty())
+        bass = noteNameInKey (c.bassPc, tonicPc, s);
+    return name + "/" + bass;
+}
+
 Chord resolve (const RelChord& r, int tonicPc)
 {
     Chord c { mod12 (r.rootOffset + tonicPc), r.quality, -1 };

@@ -112,3 +112,36 @@ TEST_CASE ("Palette: fix round 1 regressions")
     REQUIRE (p[9].chord.quality == Quality::Min7);
     REQUIRE (chordName (resolve (p[9].chord, 0)) == "Fm7");
 }
+
+TEST_CASE ("Palette: minor-family pads have no duplicate chord names")
+{
+    // Natural minor (the default key): all 14 pads distinct at every level.
+    for (int l = 0; l <= 3; ++l)
+    {
+        auto n = names (buildPalette (Scale::Minor, l), 0, 14, 9);
+        for (size_t i = 0; i < n.size(); ++i)
+            for (size_t j = i + 1; j < n.size(); ++j)
+            {
+                INFO ("level " << l << ": pads " << i << " and " << j << " are both " << n[i]);
+                CHECK (n[i] != n[j]);
+            }
+    }
+
+    // Every minor-family scale: the Picardy I never equals the V/iv pad (was "A7" twice).
+    for (auto s : { Scale::Minor, Scale::Dorian, Scale::Phrygian, Scale::HarmonicMinor, Scale::MelodicMinor })
+        for (int l = 0; l <= 3; ++l)
+        {
+            auto n = names (buildPalette (s, l), 0, 14, 9);
+            INFO (scaleName (s) << " level " << l);
+            CHECK (n[11] != n[12]);
+        }
+}
+
+TEST_CASE ("Palette: Picardy I stays major")
+{
+    REQUIRE (buildPalette (Scale::Minor, 0)[11].chord.quality == Quality::Maj);
+    REQUIRE (buildPalette (Scale::Minor, 1)[11].chord.quality == Quality::Maj);
+    REQUIRE (buildPalette (Scale::Minor, 2)[11].chord.quality == Quality::Add9);
+    REQUIRE (buildPalette (Scale::Minor, 3)[11].chord.quality == Quality::Add9);
+    REQUIRE (buildPalette (Scale::Phrygian, 3)[11].chord.quality == Quality::Maj);   // no major 9th in Phrygian
+}

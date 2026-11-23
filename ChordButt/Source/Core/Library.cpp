@@ -212,7 +212,7 @@ std::vector<const LibraryEntry*> Library::filter (const std::string& genre, cons
         {
             bool hit = lowerCase (e.name).find (needle) != std::string::npos;
             for (size_t i = 0; ! hit && i < e.chords.size(); ++i)
-                hit = lowerCase (chordName (resolve (e.chords[i], tonicPc))).find (needle) != std::string::npos;
+                hit = lowerCase (chordNameInKey (resolve (e.chords[i], tonicPc), tonicPc, e.scale)).find (needle) != std::string::npos;
             if (! hit)
                 continue;
         }
