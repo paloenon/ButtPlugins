@@ -89,14 +89,42 @@ RelChord applyComplexity (const RelChord& in, Scale scale, int level)
         }
 
         int chosen = -1;
-        for (int c : candidates)
-            if (inScale (scale, in.rootOffset + c))
+        if (candidates.size() == 1)
+        {
+            // Direct 13th for major-third chords.
+            if (inScale (scale, in.rootOffset + candidates[0]) && ! formsMinorNinth (tones, candidates[0]))
+                chosen = candidates[0];
+        }
+        else
+        {
+            const int h = step == 1 ? candidates[0] - 3 : highest();
+            if (inScale (scale, in.rootOffset + h))
             {
-                chosen = c;
-                break;
+                // Next third = the scale tone two scale steps above h.
+                const auto& sc = scaleIntervals (scale);
+                for (size_t i = 0; i < sc.size(); ++i)
+                    if (sc[i] == mod12 (in.rootOffset + h))
+                    {
+                        int d = mod12 (sc[(i + 2) % 7] - sc[i]);
+                        if ((d == 3 || d == 4) && ! formsMinorNinth (tones, h + d))
+                            chosen = h + d;
+                        break;
+                    }
             }
-        if (chosen < 0 || formsMinorNinth (tones, chosen))
+            else
+            {
+                for (int c : candidates)
+                    if (inScale (scale, in.rootOffset + c) && ! formsMinorNinth (tones, c))
+                    {
+                        chosen = c;
+                        break;
+                    }
+            }
+        }
+        if (chosen < 0)
             break;
+        if (step == 1 && chosen == 11 && hasTone (tones, 3) && ! hasTone (tones, 6) && in.rootOffset != 0)
+            chosen = 10; // no MinMaj7 away from the tonic
 
         auto next = tones;
         next.push_back (chosen);

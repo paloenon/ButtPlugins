@@ -95,11 +95,20 @@ TEST_CASE ("Palette: never a minor ninth unless explicit Dom7b9")
         for (int l = 0; l <= 3; ++l)
             for (const auto& pad : buildPalette (s, l))
             {
-                if (pad.chord.quality == Quality::Dom7b9)
-                    continue;
+                REQUIRE (pad.chord.quality != Quality::Dom7b9);
                 const auto& iv = qualityIntervals (pad.chord.quality);
                 for (int a : iv)
                     for (int b : iv)
-                        REQUIRE_FALSE ((b > a && (b - a) % 12 == 1));
+                        REQUIRE (b - a != 13);
             }
+}
+
+TEST_CASE ("Palette: fix round 1 regressions")
+{
+    REQUIRE (buildPalette (Scale::HarmonicMinor, 1)[1].chord.quality == Quality::HalfDim7);
+    REQUIRE (buildPalette (Scale::HarmonicMinor, 1)[0].chord.quality == Quality::MinMaj7);
+    REQUIRE (applyComplexity ({ 10, Quality::Dom7 }, Scale::Major, 2).quality == Quality::Dom9);
+    auto p = buildPalette (Scale::Major, 1);
+    REQUIRE (p[9].chord.quality == Quality::Min7);
+    REQUIRE (chordName (resolve (p[9].chord, 0)) == "Fm7");
 }
