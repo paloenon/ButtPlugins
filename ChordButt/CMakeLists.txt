@@ -35,6 +35,8 @@ else()
     set(PLUGIN_FORMATS Standalone)
 endif()
 
+juce_add_binary_data(ChordButtData SOURCES Resources/library.json)
+
 file(GLOB CHORD_CORE_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/Source/Core/*.cpp)
 
 juce_add_plugin(ChordButt
@@ -68,6 +70,7 @@ target_compile_definitions(ChordButt PUBLIC
 
 target_link_libraries(ChordButt
     PRIVATE
+        ChordButtData
         juce::juce_audio_utils
         juce::juce_data_structures
     PUBLIC
@@ -88,6 +91,7 @@ target_compile_definitions(ChordCoreTests PRIVATE
 )
 target_link_libraries(ChordCoreTests
     PRIVATE
+        ChordButtData
         juce::juce_core
         juce::juce_audio_basics
         juce::juce_data_structures

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "Core/Library.h"
 #include "Core/Palette.h"
 #include "Core/PluginState.h"
 #include "Core/PreviewEngine.h"
@@ -54,6 +55,9 @@ public:
     double hostBpm() const;                              // effectiveBpm of the last seen host tempo (any thread)
     cb::PreviewEngine& preview() { return previewEngine; }
     void newHumanizeSeed();
+
+    static const cb::Library& library();                 // bundled progressions, parsed once
+    void loadLibraryEntry (const cb::LibraryEntry&);     // scale := entry scale, root kept, strip replaced
 
     juce::ChangeBroadcaster stateBroadcaster;            // fires when strip/params change
 

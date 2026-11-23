@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "BinaryData.h"
 #include "Core/MidiExport.h"
 #include <algorithm>
 #include <memory>
@@ -172,6 +173,35 @@ void ChordButtProcessor::newHumanizeSeed()
     seed = s;
     rebuildPreview();
     stateBroadcaster.sendChangeMessage();
+}
+
+// ---- library ----
+
+const cb::Library& ChordButtProcessor::library()
+{
+    static const cb::Library lib = []
+    {
+        try
+        {
+            return cb::Library::fromJson (juce::String::fromUTF8 (BinaryData::library_json, BinaryData::library_jsonSize));
+        }
+        catch (const std::exception& e)
+        {
+            DBG ("ChordButt: bundled library failed to load: " << e.what());
+            jassertfalse;   // the bundled JSON is covered by LibraryTests; never ship a broken one
+            return cb::Library {};
+        }
+    }();
+    return lib;
+}
+
+void ChordButtProcessor::loadLibraryEntry (const cb::LibraryEntry& entry)
+{
+    auto p = paramValues();
+    cb::applyLibraryEntry (entry, p, stripData);   // root stays as it is
+    if (auto* param = apvts.getParameter ("scale"))
+        param->setValueNotifyingHost (param->convertTo0to1 ((float) (int) p.scale));
+    stripChanged();
 }
 
 // ---- preview wiring ----
