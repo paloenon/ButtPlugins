@@ -70,7 +70,7 @@ TEST_CASE ("PreviewEngine: single note on at 0, off at 24000 across blocks", "[P
     REQUIRE (r.events[1].pos == 24000);
     REQUIRE (r.events[1].note == 60);
     REQUIRE (r.events[1].ch == 1);
-    REQUIRE (r.eng.playheadBeat() == Catch::Approx (r.block * blockSize / 24000.0));
+    REQUIRE (r.eng.playheadBeat() == Catch::Approx ((double) (r.block * blockSize) / 24000.0));
 }
 
 TEST_CASE ("PreviewEngine: loop of 2 beats retriggers at 48000 and 96000", "[PreviewEngine]")
@@ -266,20 +266,24 @@ TEST_CASE ("PreviewEngine: auditionOn ignores notes beyond 16", "[PreviewEngine]
 
 TEST_CASE ("PreviewEngine: audition release does not cut a sounding sequence note and vice versa", "[PreviewEngine]")
 {
+    // Per R9 an auditionOn on a pitch the sequence holds retriggers it (off + on at the same
+    // sample); after that the pitch stays on until the last holder releases it.
     Rig r;
     r.eng.setSequence (Rig::seq ({ { 0.0, 1.0, 60, 100 } }), 4.0, false);
     r.eng.play();
     r.run (2);
     r.eng.auditionOn ({ 60 });
     r.run (2);
+    const size_t afterRetrigger = r.events.size();
+    REQUIRE (afterRetrigger == 3);   // on, (off, on) retrigger at 1024
+    REQUIRE ((! r.events[1].on && r.events[1].pos == 1024 && r.events[2].on && r.events[2].pos == 1024));
     r.eng.auditionOff();
     r.run (2);
-
-    for (auto& e : r.events)
-        REQUIRE (e.on);   // no note-off yet: sequence still holds 60
+    REQUIRE (r.events.size() == afterRetrigger);   // sequence still holds 60: no off
 
     r.runUntil (30000);
     REQUIRE ((! r.events.back().on && r.events.back().pos == 24000));
+    REQUIRE (r.events.size() == 4);
 
     // vice versa: audition holds 62 while the sequence's 62 ends
     Rig r2;
@@ -287,9 +291,10 @@ TEST_CASE ("PreviewEngine: audition release does not cut a sounding sequence not
     r2.eng.play();
     r2.run (2);
     r2.eng.auditionOn ({ 62 });
+    r2.run (1);
+    const size_t held = r2.events.size();
     r2.runUntil (30000);
-    for (auto& e : r2.events)
-        REQUIRE (e.on);
+    REQUIRE (r2.events.size() == held);   // sequence end at 24000 emits nothing
     r2.eng.auditionOff();
     const long offAt = r2.block * blockSize;
     r2.run (1);
@@ -387,4 +392,114 @@ TEST_CASE ("PreviewEngine: processBypassed releases everything once, then stays 
         r.eng.processBypassed (b);
         REQUIRE (b.isEmpty());
     }
+}
+
+namespace
+{
+// Per pitch, output must strictly alternate on/off starting with on; returns false otherwise.
+bool strictlyPaired (const std::vector<Ev>& events, bool requireAllReleased)
+{
+    int state[128] = {};
+    for (auto& e : events)
+    {
+        if (e.on)  { if (state[e.note] != 0) return false; state[e.note] = 1; }
+        else       { if (state[e.note] != 1) return false; state[e.note] = 0; }
+    }
+    if (requireAllReleased)
+        for (int s : state)
+            if (s != 0)
+                return false;
+    return true;
+}
+} // namespace
+
+TEST_CASE ("PreviewEngine: overlapping same-pitch sequence notes retrigger with strict on/off pairing", "[PreviewEngine]")
+{
+    Rig r;
+    r.eng.setSequence (Rig::seq ({ { 0.0, 1.0, 60, 100 }, { 0.9, 1.0, 60, 100 } }), 4.0, false);
+    r.eng.play();
+    r.runUntil (100000);
+
+    REQUIRE (strictlyPaired (r.events, true));
+    REQUIRE (r.events.size() == 4);
+    REQUIRE ((r.events[0].on && r.events[0].pos == 0));
+    REQUIRE ((! r.events[1].on && r.events[1].pos == 21600));   // retrigger: off then on at beat 0.9
+    REQUIRE ((r.events[2].on && r.events[2].pos == 21600));
+    REQUIRE ((! r.events[3].on && r.events[3].pos == 45600));   // last off at beat 1.9
+}
+
+TEST_CASE ("PreviewEngine: sequence and audition holding the same pitch stay strictly paired", "[PreviewEngine]")
+{
+    Rig r;
+    r.eng.setSequence (Rig::seq ({ { 0.0, 4.0, 60, 100 } }), 4.0, true);
+    r.eng.play();
+    r.run (2);
+    r.eng.auditionOn ({ 60 });
+    r.run (2);
+    r.eng.auditionOff();
+    r.run (2);
+    r.eng.stop();
+    r.run (2);
+
+    REQUIRE (strictlyPaired (r.events, true));
+    int ons = 0, offs = 0;
+    for (auto& e : r.events)
+        (e.on ? ons : offs)++;
+    REQUIRE (ons == offs);
+    REQUIRE (ons == 2);   // sequence on, audition retrigger
+}
+
+TEST_CASE ("PreviewEngine: retired sequences are never destroyed inside process", "[PreviewEngine]")
+{
+    Rig r;
+    r.eng.setSequence (Rig::seq ({ { 0.0, 1.0, 60, 100 } }), 4.0, true);
+    r.eng.play();
+    r.run (1);   // audio thread acknowledges generation 1
+
+    // Many swaps (slider drag) between two audio blocks: the sequence the audio thread
+    // may still be holding (generation 1) must not be freed by the message thread.
+    const int before = PreviewEngine::compiledDestroyedCount();
+    for (int i = 0; i < 5; ++i)
+        r.eng.setSequence (Rig::seq ({ { 0.0, 1.0, 62 + i, 100 } }), 4.0, true);
+    REQUIRE (PreviewEngine::compiledDestroyedCount() == before);
+
+    // process() must never be the one dropping the last reference
+    for (int i = 0; i < 3; ++i)
+    {
+        const int pre = PreviewEngine::compiledDestroyedCount();
+        r.run (1);
+        REQUIRE (PreviewEngine::compiledDestroyedCount() == pre);
+    }
+
+    // After acknowledgement of the newest generation, the next setSequence prunes all older ones.
+    r.eng.setSequence (Rig::seq ({ { 0.0, 1.0, 70, 100 } }), 4.0, true);
+    REQUIRE (PreviewEngine::compiledDestroyedCount() == before + 5);
+}
+
+TEST_CASE ("PreviewEngine: setSequence plus play before one block plays the new sequence from beat 0", "[PreviewEngine]")
+{
+    Rig r;
+    r.eng.setSequence (Rig::seq ({ { 0.0, 1.0, 60, 100 } }), 4.0, true);
+    r.run (1);   // old sequence active (not playing)
+    r.eng.setSequence (Rig::seq ({ { 0.0, 1.0, 72, 100 } }), 4.0, true);
+    r.eng.play();
+    r.run (1);
+
+    REQUIRE (r.events.size() == 1);
+    REQUIRE ((r.events[0].on && r.events[0].note == 72 && r.events[0].pos == 512));
+}
+
+TEST_CASE ("PreviewEngine: FIFO holds 64 commands and releases still apply when it is full", "[PreviewEngine]")
+{
+    Rig r;
+    for (int i = 0; i < 64; ++i)
+        r.eng.auditionOn ({ 40 + (i % 16) });
+    r.eng.auditionOff();   // 65th command: FIFO full, must still take effect
+    r.run (1);
+
+    REQUIRE (strictlyPaired (r.events, true));
+    int ons = 0;
+    for (auto& e : r.events)
+        ons += e.on ? 1 : 0;
+    REQUIRE (ons == 64);   // all 64 queued commands were accepted
 }

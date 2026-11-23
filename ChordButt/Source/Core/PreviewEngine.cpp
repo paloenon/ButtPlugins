@@ -10,6 +10,8 @@ namespace
 constexpr int midiChannel = 1;
 constexpr double sampleEpsilon = 1.0e-6;   // tolerance (in samples) for beat->sample rounding
 
+std::atomic<int> compiledDestroyed { 0 };
+
 // Sample offset (relative to the sample where the playhead is at beat `fromBeat`) at which an
 // event at `beat` fires. Using ceil keeps every event in exactly one block, even across block
 // boundaries, because the offset shifts by exactly numSamples from one block to the next.
@@ -19,7 +21,11 @@ int offsetFor (double beat, double fromBeat, double samplesPerBeat)
 }
 } // namespace
 
+PreviewEngine::Compiled::~Compiled() { ++compiledDestroyed; }
+
 PreviewEngine::PreviewEngine() = default;
+
+int PreviewEngine::compiledDestroyedCount() { return compiledDestroyed.load(); }
 
 void PreviewEngine::prepare (double newSampleRate)
 {
@@ -54,16 +60,26 @@ void PreviewEngine::setSequence (std::shared_ptr<const Sequence> sequence, doubl
         std::stable_sort (compiled->events.begin(), compiled->events.end(),
                           [] (const TimedEvent& a, const TimedEvent& b)
                           {
-                              if (a.beat != b.beat)
-                                  return a.beat < b.beat;
+                              if (a.beat < b.beat) return true;
+                              if (b.beat < a.beat) return false;
                               return a.isOff && ! b.isOff;   // offs before ons at equal beats
                           });
     }
 
     std::shared_ptr<const Compiled> published = std::move (compiled);
-    // Keep the outgoing sequence alive here so the audio thread is unlikely to drop its last reference.
-    retired = std::atomic_load (&pending);
+
+    // Retire the outgoing sequence, publish the new one, then destroy (here, on the message
+    // thread) every retired sequence older than the generation the audio thread has loaded.
+    // The audio thread only ever holds the generation it acknowledged or a newer one, and it
+    // stores the acknowledgement after dropping its previous copy, so it never frees one.
+    if (auto outgoing = std::atomic_load (&pending))
+        retired.push_back (std::move (outgoing));
     std::atomic_store (&pending, published);
+
+    const auto ack = acknowledgedGeneration.load();
+    retired.erase (std::remove_if (retired.begin(), retired.end(),
+                                   [ack] (const std::shared_ptr<const Compiled>& c) { return c->generation < ack; }),
+                   retired.end());
 }
 
 void PreviewEngine::play()
@@ -104,98 +120,148 @@ void PreviewEngine::allNotesOff()
 
 void PreviewEngine::push (const Command& c)
 {
-    const auto scope = fifo.write (1);
-    if (scope.blockSize1 > 0)
-        commands[(size_t) scope.startIndex1] = c;
-    else if (scope.blockSize2 > 0)
-        commands[(size_t) scope.startIndex2] = c;
-    // FIFO full: command dropped (64 pending commands means the audio thread is not running).
-}
-
-//==============================================================================
-// audio thread
-
-void PreviewEngine::emitOn (juce::MidiBuffer& midi, int note, int velocity, int sample)
-{
-    midi.addEvent (juce::MidiMessage::noteOn (midiChannel, note, (juce::uint8) velocity), sample);
-}
-
-void PreviewEngine::releaseSequence (juce::MidiBuffer& midi, int sample)
-{
-    for (int n = 0; n < 128; ++n)
     {
-        if (! seqSounding[(size_t) n])
-            continue;
-        seqSounding[(size_t) n] = false;
-        if (! auditionSounding[(size_t) n])
-            midi.addEvent (juce::MidiMessage::noteOff (midiChannel, n), sample);
+        const auto scope = fifo.write (1);
+        if (scope.blockSize1 > 0)
+        {
+            commands[(size_t) scope.startIndex1] = c;
+            return;
+        }
+        if (scope.blockSize2 > 0)
+        {
+            commands[(size_t) scope.startIndex2] = c;
+            return;
+        }
+    }
+
+    // FIFO full: releases must still happen (play / audition-on are dropped).
+    switch (c.type)
+    {
+        case CommandType::Stop:        pendingStop.store (true); break;
+        case CommandType::AuditionOff: pendingAuditionOff.store (true); break;
+        case CommandType::AllNotesOff: pendingAllOff.store (true); break;
+        case CommandType::Play:
+        case CommandType::AuditionOn:  break;
     }
 }
 
-void PreviewEngine::releaseAudition (juce::MidiBuffer& midi, int sample)
+//==============================================================================
+// audio thread: note bookkeeping (per-pitch hold counts per source)
+
+void PreviewEngine::noteOn (Source src, int note, int velocity, juce::MidiBuffer& midi, int sample)
 {
-    for (int n = 0; n < 128; ++n)
+    const auto n = (size_t) note;
+    if (holds[0][n] + holds[1][n] > 0)   // already sounding: retrigger (off, then on)
+        midi.addEvent (juce::MidiMessage::noteOff (midiChannel, note), sample);
+    midi.addEvent (juce::MidiMessage::noteOn (midiChannel, note, (juce::uint8) velocity), sample);
+    if (holds[(size_t) src][n] < 255)
+        ++holds[(size_t) src][n];
+}
+
+void PreviewEngine::noteOff (Source src, int note, juce::MidiBuffer& midi, int sample)
+{
+    const auto n = (size_t) note;
+    if (holds[(size_t) src][n] == 0)
+        return;   // not held by this source (e.g. a note of a swapped-in sequence that never started)
+    --holds[(size_t) src][n];
+    if (holds[0][n] + holds[1][n] == 0)
+        midi.addEvent (juce::MidiMessage::noteOff (midiChannel, note), sample);
+}
+
+void PreviewEngine::releaseSource (Source src, juce::MidiBuffer& midi, int sample)
+{
+    const auto other = (size_t) (src == seqSource ? auditionSource : seqSource);
+    for (size_t n = 0; n < 128; ++n)
     {
-        if (! auditionSounding[(size_t) n])
+        if (holds[(size_t) src][n] == 0)
             continue;
-        auditionSounding[(size_t) n] = false;
-        if (! seqSounding[(size_t) n])
-            midi.addEvent (juce::MidiMessage::noteOff (midiChannel, n), sample);
+        holds[(size_t) src][n] = 0;
+        if (holds[other][n] == 0)
+            midi.addEvent (juce::MidiMessage::noteOff (midiChannel, (int) n), sample);
     }
 }
 
 void PreviewEngine::releaseAll (juce::MidiBuffer& midi, int sample)
 {
-    const auto all = seqSounding | auditionSounding;
-    seqSounding.reset();
-    auditionSounding.reset();
-    for (int n = 0; n < 128; ++n)
-        if (all[(size_t) n])
-            midi.addEvent (juce::MidiMessage::noteOff (midiChannel, n), sample);
+    for (size_t n = 0; n < 128; ++n)
+    {
+        if (holds[0][n] + holds[1][n] == 0)
+            continue;
+        holds[0][n] = holds[1][n] = 0;
+        midi.addEvent (juce::MidiMessage::noteOff (midiChannel, (int) n), sample);
+    }
 }
+
+void PreviewEngine::stopTransport (juce::MidiBuffer& midi)
+{
+    releaseSource (seqSource, midi, 0);
+    playing = false;
+    playhead = 0.0;
+    needsSeek = true;
+}
+
+//==============================================================================
+// audio thread: commands
 
 void PreviewEngine::handleCommand (const Command& c, juce::MidiBuffer& midi, bool bypassed)
 {
     switch (c.type)
     {
         case CommandType::Play:
-            releaseSequence (midi, 0);
+            stopTransport (midi);
             playing = true;
-            playhead = 0.0;
-            needsSeek = true;
             break;
 
         case CommandType::Stop:
-            releaseSequence (midi, 0);
-            playing = false;
-            playhead = 0.0;
-            needsSeek = true;
+            stopTransport (midi);
             break;
 
         case CommandType::AuditionOn:
-            releaseAudition (midi, 0);
+            releaseSource (auditionSource, midi, 0);
             if (bypassed)
                 break;
             for (int i = 0; i < c.numNotes; ++i)
-            {
-                const int n = c.notes[(size_t) i];
-                emitOn (midi, n, auditionVelocity, 0);
-                auditionSounding[(size_t) n] = true;
-            }
+                noteOn (auditionSource, c.notes[(size_t) i], auditionVelocity, midi, 0);
             break;
 
         case CommandType::AuditionOff:
-            releaseAudition (midi, 0);
+            releaseSource (auditionSource, midi, 0);
             break;
 
         case CommandType::AllNotesOff:
             releaseAll (midi, 0);
-            playing = false;
-            playhead = 0.0;
-            needsSeek = true;
+            stopTransport (midi);
             break;
     }
 }
+
+void PreviewEngine::drainCommands (juce::MidiBuffer& midi, bool bypassed)
+{
+    {
+        const auto scope = fifo.read (fifo.getNumReady());
+        for (int i = 0; i < scope.blockSize1; ++i)
+            handleCommand (commands[(size_t) (scope.startIndex1 + i)], midi, bypassed);
+        for (int i = 0; i < scope.blockSize2; ++i)
+            handleCommand (commands[(size_t) (scope.startIndex2 + i)], midi, bypassed);
+    }
+    applyPendingReleases (midi);
+}
+
+void PreviewEngine::applyPendingReleases (juce::MidiBuffer& midi)
+{
+    if (pendingAllOff.exchange (false))
+    {
+        releaseAll (midi, 0);
+        stopTransport (midi);
+    }
+    if (pendingStop.exchange (false))
+        stopTransport (midi);
+    if (pendingAuditionOff.exchange (false))
+        releaseSource (auditionSource, midi, 0);
+}
+
+//==============================================================================
+// audio thread: rendering
 
 void PreviewEngine::seek (const Compiled& seq, double samplesPerBeat)
 {
@@ -222,21 +288,10 @@ void PreviewEngine::render (const Compiled& seq, juce::MidiBuffer& midi, int num
             if (off >= numSamples)
                 break;
 
-            const auto idx = (size_t) e.note;
             if (e.isOff)
-            {
-                if (seqSounding[idx])
-                {
-                    seqSounding[idx] = false;
-                    if (! auditionSounding[idx])
-                        midi.addEvent (juce::MidiMessage::noteOff (midiChannel, e.note), off);
-                }
-            }
+                noteOff (seqSource, e.note, midi, off);
             else
-            {
-                emitOn (midi, e.note, e.velocity, off);
-                seqSounding[idx] = true;
-            }
+                noteOn (seqSource, e.note, e.velocity, midi, off);
             ++cursor;
         }
 
@@ -248,7 +303,7 @@ void PreviewEngine::render (const Compiled& seq, juce::MidiBuffer& midi, int num
         }
 
         // end of the pass inside this block (all events up to lengthBeats already emitted)
-        releaseSequence (midi, endOff);   // anything still held (normally nothing)
+        releaseSource (seqSource, midi, endOff);   // anything still held (normally nothing)
         playhead = 0.0;
         cursor = 0;
 
@@ -268,40 +323,30 @@ void PreviewEngine::render (const Compiled& seq, juce::MidiBuffer& midi, int num
 
 void PreviewEngine::process (juce::MidiBuffer& midi, int numSamples, std::optional<double> hostBpm)
 {
-    // 1. sequence swap
-    const auto seq = std::atomic_load (&pending);
-    if (seq != nullptr && seq->generation != activeGeneration)
-    {
-        activeGeneration = seq->generation;
-        releaseSequence (midi, 0);
-        playhead = seq->lengthBeats > 0.0 ? std::fmod (playhead, seq->lengthBeats) : 0.0;
-        needsSeek = true;
-    }
+    // 1. commands first, so setSequence(B) + play() is never started on the old sequence
+    drainCommands (midi, false);
 
-    // 2. commands
+    // 2. current sequence; acknowledge its generation (our previous copy is already released)
+    const auto seq = std::atomic_load (&pending);
+    if (seq != nullptr)
     {
-        const auto scope = fifo.read (fifo.getNumReady());
-        for (int i = 0; i < scope.blockSize1; ++i)
-            handleCommand (commands[(size_t) (scope.startIndex1 + i)], midi, false);
-        for (int i = 0; i < scope.blockSize2; ++i)
-            handleCommand (commands[(size_t) (scope.startIndex2 + i)], midi, false);
+        acknowledgedGeneration.store (seq->generation);
+        if (seq->generation != activeGeneration)
+        {
+            activeGeneration = seq->generation;
+            releaseSource (seqSource, midi, 0);
+            playhead = seq->lengthBeats > 0.0 ? std::fmod (playhead, seq->lengthBeats) : 0.0;
+            needsSeek = true;
+        }
     }
 
     // 3. sequence playback
     if (playing)
     {
         if (seq == nullptr || seq->lengthBeats <= 0.0)
-        {
-            releaseSequence (midi, 0);
-            playing = false;
-            playhead = 0.0;
-            needsSeek = true;
-        }
+            stopTransport (midi);
         else if (numSamples > 0)
-        {
-            const double samplesPerBeat = sampleRate * 60.0 / effectiveBpm (hostBpm);
-            render (*seq, midi, numSamples, samplesPerBeat);
-        }
+            render (*seq, midi, numSamples, sampleRate * 60.0 / effectiveBpm (hostBpm));
     }
 
     playingFlag.store (playing);
@@ -311,14 +356,7 @@ void PreviewEngine::process (juce::MidiBuffer& midi, int numSamples, std::option
 void PreviewEngine::processBypassed (juce::MidiBuffer& midi)
 {
     // Apply transport commands (audition note-ons are dropped), then release everything sounding.
-    {
-        const auto scope = fifo.read (fifo.getNumReady());
-        for (int i = 0; i < scope.blockSize1; ++i)
-            handleCommand (commands[(size_t) (scope.startIndex1 + i)], midi, true);
-        for (int i = 0; i < scope.blockSize2; ++i)
-            handleCommand (commands[(size_t) (scope.startIndex2 + i)], midi, true);
-    }
-
+    drainCommands (midi, true);
     releaseAll (midi, 0);
     needsSeek = true;
 
