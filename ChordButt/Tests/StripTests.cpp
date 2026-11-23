@@ -103,3 +103,34 @@ TEST_CASE ("Strip: voiceStrip transposes by exactly the tonic difference")
             REQUIRE (b[i].notes[j] - a[i].notes[j] == 2);
     }
 }
+
+TEST_CASE ("Strip: fromValueTree clamps chord offsets and the inversion override")
+{
+    juce::ValueTree t ("STRIP");
+    auto addSlot = [&] (int root, int bass, std::optional<int> inv)
+    {
+        juce::ValueTree n ("SLOT");
+        n.setProperty ("rootOffset", root, nullptr);
+        n.setProperty ("quality", 0, nullptr);
+        n.setProperty ("bassOffset", bass, nullptr);
+        n.setProperty ("lengthBars", 1.0, nullptr);
+        if (inv)
+            n.setProperty ("inversionOverride", *inv, nullptr);
+        t.appendChild (n, nullptr);
+    };
+    addSlot (14, 40, 9);
+    addSlot (-3, -7, -2);
+    addSlot (5, 7, 2);
+
+    auto s = Strip::fromValueTree (t);
+    REQUIRE (s.slots().size() == 3);
+    REQUIRE (s.slots()[0].chord.rootOffset == 11);
+    REQUIRE (s.slots()[0].chord.bassOffset == 11);
+    REQUIRE (s.slots()[0].inversionOverride == 3);
+    REQUIRE (s.slots()[1].chord.rootOffset == 0);
+    REQUIRE (s.slots()[1].chord.bassOffset == -1);
+    REQUIRE (s.slots()[1].inversionOverride == 0);
+    REQUIRE (s.slots()[2].chord.rootOffset == 5);
+    REQUIRE (s.slots()[2].chord.bassOffset == 7);
+    REQUIRE (s.slots()[2].inversionOverride == 2);
+}

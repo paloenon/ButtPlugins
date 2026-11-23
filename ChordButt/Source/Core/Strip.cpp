@@ -96,15 +96,15 @@ Strip Strip::fromValueTree (const juce::ValueTree& t)
         auto n = t.getChild (i);
         if (! n.hasType ("SLOT")) continue;
         StripSlot s;
-        s.chord.rootOffset = (int) n.getProperty ("rootOffset", 0);
+        s.chord.rootOffset = juce::jlimit (0, 11, (int) n.getProperty ("rootOffset", 0));
         int q = (int) n.getProperty ("quality", 0);
         q = juce::jlimit (0, (int) Quality::Min13, q);
         s.chord.quality = (Quality) q;
-        s.chord.bassOffset = (int) n.getProperty ("bassOffset", -1);
+        s.chord.bassOffset = juce::jlimit (-1, 11, (int) n.getProperty ("bassOffset", -1));
         s.chord.roman = n.getProperty ("roman", "").toString().toStdString();
         s.lengthBars = snapLength ((double) n.getProperty ("lengthBars", 1.0));
         if (n.hasProperty ("inversionOverride"))
-            s.inversionOverride = (int) n.getProperty ("inversionOverride");
+            s.inversionOverride = juce::jlimit (0, 3, (int) n.getProperty ("inversionOverride"));
         if (! strip.append (s)) break;
     }
     return strip;

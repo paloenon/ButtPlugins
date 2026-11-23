@@ -99,3 +99,48 @@ TEST_CASE ("MidiExport: empty events give meta-only file", "[MidiExport]")
     REQUIRE (f.existsAsFile());
     f.deleteFile();
 }
+
+namespace
+{
+double endOfTrackTick (const juce::MidiFile& mf)
+{
+    double t = -1.0;
+    for (auto* e : *mf.getTrack (0))
+        if (e->message.isEndOfTrackMetaEvent())
+            t = e->message.getTimeStamp();
+    return t;
+}
+} // namespace
+
+TEST_CASE ("MidiExport: end of track at the given length so the region loops", "[MidiExport]")
+{
+    // A 4-bar strip whose last note ends early (staccato rhythm) must still give a 4-bar region.
+    std::vector<NoteEvent> ev { { 0.0, 1.0, 60, 100 }, { 12.0, 0.5, 64, 100 } };
+    REQUIRE (endOfTrackTick (buildMidiFile (ev, 120.0)) == Catch::Approx (12.5 * 960.0));   // no length: last note-off
+    REQUIRE (endOfTrackTick (buildMidiFile (ev, 120.0, 16.0)) == Catch::Approx (16.0 * 960.0));
+
+    // Single slot of half a bar
+    REQUIRE (endOfTrackTick (buildMidiFile ({ { 0.0, 0.25, 60, 100 } }, 120.0, 2.0)) == Catch::Approx (1920.0));
+
+    // As in the preview, notes are clipped to the length (never past the end of the region).
+    auto clipped = buildMidiFile ({ { 0.0, 8.0, 60, 100 }, { 4.0, 1.0, 62, 100 } }, 120.0, 4.0);
+    int ons = 0;
+    for (auto* e : *clipped.getTrack (0))
+    {
+        if (e->message.isNoteOn()) ++ons;
+        if (e->message.isNoteOff()) REQUIRE (e->message.getTimeStamp() <= 3840.0);
+    }
+    REQUIRE (ons == 1);
+    REQUIRE (endOfTrackTick (clipped) == Catch::Approx (3840.0));
+}
+
+TEST_CASE ("MidiExport: written file keeps the length", "[MidiExport]")
+{
+    auto f = writeTempMidi ({ { 0.0, 1.0, 60, 100 } }, 100.0, "CbLengthTest", 8.0);
+    juce::FileInputStream in (f);
+    REQUIRE (in.openedOk());
+    juce::MidiFile rf;
+    REQUIRE (rf.readFrom (in));
+    REQUIRE (rf.getLastTimestamp() == Catch::Approx (8.0 * 960.0));
+    f.deleteFile();
+}

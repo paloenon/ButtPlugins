@@ -1,4 +1,5 @@
 #include "Core/MidiExport.h"
+#include <algorithm>
 #include <cmath>
 
 namespace cb
@@ -8,7 +9,7 @@ namespace
 double toTicks (double beats) { return std::round (beats * midiExportPPQ); }
 }
 
-juce::MidiFile buildMidiFile (const std::vector<NoteEvent>& events, double bpm)
+juce::MidiFile buildMidiFile (const std::vector<NoteEvent>& events, double bpm, std::optional<double> lengthBeats)
 {
     if (! (bpm > 0.0))
         bpm = 120.0;
@@ -23,11 +24,22 @@ juce::MidiFile buildMidiFile (const std::vector<NoteEvent>& events, double bpm)
     sig.setTimeStamp (0.0);
     track.addEvent (sig);
 
+    // With a length, the region ends exactly there (so it loops like the preview) and, as in the
+    // preview, notes are clipped to it.
+    const bool hasLength = lengthBeats.has_value() && *lengthBeats > 0.0;
+    const double lengthTicks = hasLength ? toTicks (*lengthBeats) : 0.0;
+
     double lastTick = 0.0;
     for (const auto& e : events)
     {
         const auto on  = toTicks (e.startBeat);
         auto off = toTicks (e.startBeat + e.lengthBeats);
+        if (hasLength)
+        {
+            if (on >= lengthTicks)
+                continue;
+            off = std::min (off, lengthTicks);
+        }
         if (off <= on) off = on + 1.0;
         const auto vel = (juce::uint8) juce::jlimit (1, 127, e.velocity);
         const auto note = juce::jlimit (0, 127, e.note);
@@ -61,7 +73,7 @@ juce::MidiFile buildMidiFile (const std::vector<NoteEvent>& events, double bpm)
     sorted.updateMatchedPairs();
 
     auto eot = juce::MidiMessage::endOfTrack();
-    eot.setTimeStamp (lastTick);
+    eot.setTimeStamp (hasLength ? lengthTicks : lastTick);
     sorted.addEvent (eot);
 
     juce::MidiFile file;
@@ -70,7 +82,8 @@ juce::MidiFile buildMidiFile (const std::vector<NoteEvent>& events, double bpm)
     return file;
 }
 
-juce::File writeTempMidi (const std::vector<NoteEvent>& events, double bpm, const juce::String& baseName)
+juce::File writeTempMidi (const std::vector<NoteEvent>& events, double bpm, const juce::String& baseName,
+                          std::optional<double> lengthBeats)
 {
     auto name = juce::File::createLegalFileName (baseName.trim());
     if (name.isEmpty())
@@ -84,7 +97,7 @@ juce::File writeTempMidi (const std::vector<NoteEvent>& events, double bpm, cons
 
     if (auto out = file.createOutputStream())
     {
-        buildMidiFile (events, bpm).writeTo (*out, 1);
+        buildMidiFile (events, bpm, lengthBeats).writeTo (*out, 1);
         out->flush();
     }
     return file;

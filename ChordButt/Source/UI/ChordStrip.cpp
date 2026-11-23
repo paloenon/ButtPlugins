@@ -473,10 +473,12 @@ bool ChordStrip::prepareExternalDrag (const var& description, StringArray& files
     const auto desc = description.toString();
     std::vector<cb::NoteEvent> events;
     String name;
+    double lengthBeats = 0.0;   // the region ends here, so it loops like the preview
 
     if (desc == "strip")
     {
         events = processor.currentEvents();
+        lengthBeats = processor.strip().totalBeats();
         for (int i = 0; i < (int) slots.size(); ++i)
             name << (i > 0 ? "-" : "") << slotName (i, true);
     }
@@ -489,6 +491,7 @@ bool ChordStrip::prepareExternalDrag (const var& description, StringArray& files
         const auto voiced = processor.voicedStrip();
         events = cb::generateEvents ({ voiced[(size_t) index] }, processor.currentStyle());
         name = slotName (index, true);
+        lengthBeats = voiced[(size_t) index].lengthBeats;
     }
     else
     {
@@ -498,7 +501,7 @@ bool ChordStrip::prepareExternalDrag (const var& description, StringArray& files
     if (events.empty())
         return false;
 
-    const auto file = cb::writeTempMidi (events, processor.hostBpm(), name);
+    const auto file = cb::writeTempMidi (events, processor.hostBpm(), name, lengthBeats);
     if (! file.existsAsFile())   // writeTempMidi returns a non-existent file when writing failed
         return false;
 
