@@ -83,7 +83,7 @@ void ChordButtProcessor::releaseResources()
     previewEngine.allNotesOff();
 }
 
-void ChordButtProcessor::processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer& midi)
+void ChordButtProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     std::optional<double> bpm;
     if (auto* ph = getPlayHead())
@@ -94,7 +94,7 @@ void ChordButtProcessor::processBlock (juce::AudioBuffer<float>&, juce::MidiBuff
                     bpm = *b;
                     lastHostBpm.store (*b);
                 }
-    previewEngine.process (midi, getBlockSize(), bpm);
+    previewEngine.process (midi, buffer.getNumSamples(), bpm);
 }
 
 void ChordButtProcessor::processBlockBypassed (juce::AudioBuffer<float>&, juce::MidiBuffer& midi)
@@ -223,10 +223,18 @@ void ChordButtProcessor::setStateInformation (const void* data, int size)
     auto tree = juce::ValueTree::fromXml (*xml);
     if (! tree.isValid() || ! tree.hasType (apvts.state.getType())) return;
 
-    apvts.replaceState (tree);
-
     cb::ParamValues ignored;
     cb::readState (tree, ignored, stripData, seed);
+
+    // Parameters missing from an older/partial state go back to their defaults.
+    for (auto* id : paramIds)
+        if (auto* param = apvts.getParameter (id))
+            param->setValueNotifyingHost (param->getDefaultValue());
+
+    auto paramsOnly = tree.createCopy();
+    paramsOnly.removeChild (paramsOnly.getChildWithName ("STRIP"), nullptr);
+    paramsOnly.removeProperty ("seed", nullptr);
+    apvts.replaceState (paramsOnly);
     rebuildPreview();
     stateBroadcaster.sendChangeMessage();
 }
