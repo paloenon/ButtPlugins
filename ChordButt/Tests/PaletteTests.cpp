@@ -145,3 +145,36 @@ TEST_CASE ("Palette: Picardy I stays major")
     REQUIRE (buildPalette (Scale::Minor, 3)[11].chord.quality == Quality::Add9);
     REQUIRE (buildPalette (Scale::Phrygian, 3)[11].chord.quality == Quality::Maj);   // no major 9th in Phrygian
 }
+
+TEST_CASE ("Palette: 14 distinct chords in every scale and level")
+{
+    for (auto s : { Scale::Major, Scale::Minor, Scale::Dorian, Scale::Phrygian, Scale::Lydian, Scale::Mixolydian,
+                    Scale::HarmonicMinor, Scale::MelodicMinor })
+        for (int l = 0; l <= 3; ++l)
+        {
+            auto p = buildPalette (s, l);
+            REQUIRE (p.size() == 14);
+            for (size_t i = 0; i < p.size(); ++i)
+            {
+                // What a click stores re-voices to exactly what the pad shows.
+                REQUIRE (applyComplexity (p[i].base, s, l) == p[i].chord);
+                for (size_t j = i + 1; j < p.size(); ++j)
+                {
+                    INFO (scaleName (s) << " level " << l << ": pads " << i << " and " << j);
+                    CHECK_FALSE ((p[i].chord.rootOffset == p[j].chord.rootOffset && p[i].chord.quality == p[j].chord.quality));
+                }
+            }
+        }
+}
+
+TEST_CASE ("Palette: duplicate colour pads are replaced by fallbacks")
+{
+    // Dorian: diatonic IV is major, so the borrowed IV becomes the first free fallback (V/V = II7).
+    auto d = buildPalette (Scale::Dorian, 0);
+    REQUIRE (d[9].chord.roman == "V/V");
+    REQUIRE (d[9].chord.quality == Quality::Dom7);
+    // Harmonic minor level 1: diatonic V is already V7.
+    REQUIRE (buildPalette (Scale::HarmonicMinor, 1)[8].chord.roman != "V7");
+    // Natural minor keeps its colour row.
+    REQUIRE (buildPalette (Scale::Minor, 1)[8].chord.roman == "V7");
+}

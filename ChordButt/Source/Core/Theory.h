@@ -53,6 +53,10 @@ std::string chordName (const Chord&);
 // chordName with key-aware spelling; a slash bass that is a chord tone is spelled from the chord root
 // (E/G#, D/F#, Ab/C).
 std::string chordNameInKey (const Chord&, int tonicPc, Scale);
+// As above, but when the chord's roman numeral names its root (romanToOffset == rootOffset) the root
+// is spelled from the numeral: letter = tonic letter + numeral degree, so #i°7 in A is A#°7 and in C
+// C#°7. Spellings that would need E#/B#/Cb/Fb or a double accidental fall back (#ii°7 in A = C°7).
+std::string chordNameInKey (const RelChord&, int tonicPc, Scale);
 
 // Accidentals are relative to the MAJOR scale degree. Trailing quality markers are ignored.
 std::optional<int> romanToOffset (const std::string&);

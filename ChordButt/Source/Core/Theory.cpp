@@ -199,6 +199,32 @@ int tonicLetter (int tonicPc, Scale s)
 }
 
 int letterOf (const std::string& name) { return (int) (std::strchr (letters, name[0]) - letters); }
+// Spelling of a slash bass that is a chord tone, from the root's letter; empty when not a chord tone
+// or not spellable with one accidental.
+std::string chordToneBass (const Chord& c, int rootLetter)
+{
+    const int interval = mod12 (c.bassPc - c.rootPc);
+    for (int tone : qualityIntervals (c.quality))
+    {
+        if (mod12 (tone) != interval)
+            continue;
+        // Letter steps of a chord tone above the root (3rds, 5ths, 7ths; 2/9, 4/11, 6/13).
+        int steps = 0;
+        switch (tone)
+        {
+            case 0: steps = 0; break;
+            case 2: case 14: case 13: case 15: steps = 1; break;
+            case 3: case 4: steps = 2; break;
+            case 5: case 17: case 18: steps = 3; break;
+            case 6: case 7: case 8: steps = 4; break;
+            case 9: case 21: steps = (c.quality == Quality::Dim7) ? 6 : 5; break;
+            case 10: case 11: steps = 6; break;
+            default: return {};
+        }
+        return spellOn (rootLetter + steps, c.bassPc);
+    }
+    return {};
+}
 } // namespace
 
 std::string noteNameInKey (int pc, int tonicPc, Scale s)
@@ -217,29 +243,7 @@ std::string chordNameInKey (const Chord& c, int tonicPc, Scale s)
     if (c.bassPc < 0)
         return name;
 
-    std::string bass;
-    const int interval = mod12 (c.bassPc - c.rootPc);
-    for (int tone : qualityIntervals (c.quality))
-    {
-        if (mod12 (tone) != interval)
-            continue;
-        // Letter steps of a chord tone above the root (3rds, 5ths, 7ths; 2/9, 4/11, 6/13).
-        int steps = 0;
-        switch (tone)
-        {
-            case 0: steps = 0; break;
-            case 2: case 14: case 13: case 15: steps = 1; break;
-            case 3: case 4: steps = 2; break;
-            case 5: case 17: case 18: steps = 3; break;
-            case 6: case 7: case 8: steps = 4; break;
-            case 9: case 21: steps = (c.quality == Quality::Dim7) ? 6 : 5; break;
-            case 10: case 11: steps = 6; break;
-            default: steps = -1; break;
-        }
-        if (steps >= 0)
-            bass = spellOn (letterOf (root) + steps, c.bassPc);
-        break;
-    }
+    std::string bass = chordToneBass (c, letterOf (root));
     if (bass.empty())
         bass = noteNameInKey (c.bassPc, tonicPc, s);
     return name + "/" + bass;
@@ -261,7 +265,11 @@ std::string chordName (const Chord& c)
     return s;
 }
 
-std::optional<int> romanToOffset (const std::string& str)
+namespace
+{
+struct ParsedRoman { int shift; int degree; };   // degree 0..6
+
+std::optional<ParsedRoman> parseRoman (const std::string& str)
 {
     size_t i = 0;
     int shift = 0;
@@ -279,11 +287,46 @@ std::optional<int> romanToOffset (const std::string& str)
         numeral += (char) std::tolower ((unsigned char) str[i++]);
 
     // Anything after the numeral (quality markers, extensions) is ignored.
-    static const std::vector<std::pair<const char*, int>> degrees {
-        { "i", 0 }, { "ii", 2 }, { "iii", 4 }, { "iv", 5 }, { "v", 7 }, { "vi", 9 }, { "vii", 11 } };
-    for (const auto& d : degrees)
-        if (numeral == d.first)
-            return mod12 (d.second + shift);
+    static const char* numerals[7] { "i", "ii", "iii", "iv", "v", "vi", "vii" };
+    for (int d = 0; d < 7; ++d)
+        if (numeral == numerals[d])
+            return ParsedRoman { shift, d };
     return std::nullopt;
 }
+} // namespace
+
+std::optional<int> romanToOffset (const std::string& str)
+{
+    static const int majorDegrees[7] { 0, 2, 4, 5, 7, 9, 11 };
+    if (auto p = parseRoman (str))
+        return mod12 (majorDegrees[p->degree] + p->shift);
+    return std::nullopt;
+}
+
+std::string chordNameInKey (const RelChord& r, int tonicPc, Scale s)
+{
+    const auto c = resolve (r, tonicPc);
+    auto name = chordNameInKey (c, tonicPc, s);
+    const auto parsed = parseRoman (r.roman);
+    if (! parsed || romanToOffset (r.roman) != mod12 (r.rootOffset))
+        return name;   // no numeral, or it names something else (e.g. "V/iv")
+
+    const auto root = spellOn (tonicLetter (tonicPc, s) + parsed->degree, c.rootPc);
+    if (root.empty())
+        return name;
+    const auto oldRoot = noteNameInKey (c.rootPc, tonicPc, s);
+    if (root == oldRoot)
+        return name;
+
+    // Re-spell with the numeral's root; a chord-tone slash bass follows the new root letter.
+    auto out = root + qualitySuffix (c.quality);
+    if (c.bassPc >= 0)
+    {
+        const auto slash = name.substr (name.find ('/') + 1);
+        const auto relative = chordToneBass (c, letterOf (root));
+        out += "/" + (relative.empty() ? slash : relative);
+    }
+    return out;
+}
+
 } // namespace cb

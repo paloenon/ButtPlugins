@@ -120,7 +120,6 @@ PadGrid::PadGrid (ChordButtProcessor& p)
 void PadGrid::refresh (bool animate)
 {
     palette = processor.currentPalette();
-    basePalette = cb::buildPalette (processor.scale(), 0);
     const int tonic = processor.tonic();
 
     for (int i = 0; i < pads.size(); ++i)
@@ -131,7 +130,7 @@ void PadGrid::refresh (bool animate)
             continue;
         }
         const auto& rel = palette[(size_t) i].chord;
-        pads[i]->setChord (Theme::pretty (cb::chordNameInKey (cb::resolve (rel, tonic), tonic, processor.scale())), Theme::pretty (rel.roman), animate);
+        pads[i]->setChord (Theme::pretty (cb::chordNameInKey (rel, tonic, processor.scale())), Theme::pretty (rel.roman), animate);
     }
 }
 
@@ -161,10 +160,10 @@ void PadGrid::padPressed (int index)
 void PadGrid::padReleased (int index, bool auditionOnly)
 {
     processor.preview().auditionOff();
-    if (auditionOnly || index >= (int) basePalette.size())
+    if (auditionOnly || index >= (int) palette.size())
         return;
     if (onPadCommitted)
-        onPadCommitted (basePalette[(size_t) index].chord);
+        onPadCommitted (palette[(size_t) index].base);
 }
 
 // =============================================================================================

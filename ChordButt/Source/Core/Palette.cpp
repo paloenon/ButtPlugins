@@ -59,6 +59,15 @@ RelChord applyComplexity (const RelChord& in, Scale scale, int level)
     if (in.quality == Quality::Sus2 || in.quality == Quality::Dom7sus4)
         return out;
 
+    // Picardy I (major tonic in a minor-family key): stays a major triad, only add9 from level 2, so it
+    // never turns into the dominant seventh of V/iv (in the palette and in the strip alike).
+    if (isMinorFamily (scale) && in.rootOffset == 0 && in.quality == Quality::Maj)
+    {
+        if (level >= 2 && inScale (scale, 2))
+            out.quality = Quality::Add9;
+        return out;
+    }
+
     auto tones = qualityIntervals (in.quality);
     auto highest = [&] { return *std::max_element (tones.begin(), tones.end()); };
 
@@ -159,13 +168,42 @@ std::vector<PadChord> buildPalette (Scale scale, int complexity)
             std::transform (roman.begin(), roman.end(), roman.begin(), [] (unsigned char c) { return (char) std::tolower (c); });
 
         RelChord tri { root, q, -1, roman + suffix };
-        pads.push_back ({ applyComplexity (tri, scale, complexity), "diatonic" });
+        pads.push_back ({ applyComplexity (tri, scale, complexity), "diatonic", tri });
     }
+
+    auto taken = [&] (const RelChord& c)
+    {
+        for (const auto& p : pads)
+            if (p.chord.rootOffset == c.rootOffset && p.chord.quality == c.quality)
+                return true;
+        return false;
+    };
+
+    // Colour pads that would repeat an earlier pad (e.g. Dorian's diatonic IV and the borrowed IV) are
+    // replaced by the first fallback that is still free at this complexity level.
+    struct Fallback { int root; Quality q; const char* roman; const char* cat; };
+    static const Fallback fallbacks[] {
+        { 2, Quality::Dom7, "V/V", "secondary" }, { 8, Quality::Maj, "bVI", "borrowed" },
+        { 10, Quality::Maj, "bVII", "borrowed" }, { 3, Quality::Maj, "bIII", "borrowed" },
+        { 5, Quality::Min6, "iv6", "borrowed" },  { 1, Quality::Maj, "bII", "borrowed" },
+        { 5, Quality::Maj, "IV", "borrowed" },    { 7, Quality::Min, "v", "borrowed" } };
 
     auto add = [&] (int root, Quality q, const char* roman, const char* cat)
     {
-        RelChord c { root, q, -1, roman };
-        pads.push_back ({ applyComplexity (c, scale, complexity), cat });
+        RelChord base { root, q, -1, roman };
+        auto c = applyComplexity (base, scale, complexity);
+        if (taken (c))
+            for (const auto& f : fallbacks)
+            {
+                RelChord fb { f.root, f.q, -1, f.roman };
+                auto fc = applyComplexity (fb, scale, complexity);
+                if (! taken (fc))
+                {
+                    pads.push_back ({ fc, f.cat, fb });
+                    return;
+                }
+            }
+        pads.push_back ({ c, cat, base });
     };
 
     if (! isMinorFamily (scale))
@@ -184,14 +222,7 @@ std::vector<PadChord> buildPalette (Scale scale, int complexity)
         add (7, Quality::Dom7, "V7", "borrowed");
         add (5, Quality::Maj, "IV", "borrowed");
         add (1, Quality::Maj7, "bII", "colour");
-        // Picardy I: stays a major triad (only add9 from level 2) so it never turns into the same
-        // dominant seventh as the V/iv pad next to it.
-        {
-            RelChord picardy { 0, Quality::Maj, -1, "I" };
-            if (complexity >= 2 && inScale (scale, 2))
-                picardy.quality = Quality::Add9;
-            pads.push_back ({ picardy, "borrowed" });
-        }
+        add (0, Quality::Maj, "I", "borrowed");   // Picardy: see applyComplexity
         add (0, Quality::Dom7, "V/iv", "secondary");
         add (7, Quality::Sus4, "vsus4", "sus");
     }

@@ -150,3 +150,23 @@ TEST_CASE ("Theory: key-aware spelling")
                 REQUIRE (std::string ("CDEFGAB").find (n[0]) != std::string::npos);
             }
 }
+
+TEST_CASE ("Theory: spelling from roman numerals")
+{
+    const RelChord sharpI { 1, Quality::Dim7, -1, "#i\xC2\xB0" };
+    const RelChord sharpII { 3, Quality::Dim7, -1, "#ii\xC2\xB0" };
+    REQUIRE (chordNameInKey (sharpI, 0, Scale::Major) == "C#\xC2\xB0" "7");
+    REQUIRE (chordNameInKey (sharpII, 0, Scale::Major) == "D#\xC2\xB0" "7");
+    REQUIRE (chordNameInKey (sharpI, 9, Scale::Major) == "A#\xC2\xB0" "7");
+    // B#°7 would need B#: falls back to the key spelling (decision: C°7, readability wins).
+    REQUIRE (chordNameInKey (sharpII, 9, Scale::Major) == "C\xC2\xB0" "7");
+    // Flat numerals stay flat; numerals that don't name the root (V/iv) use the degree spelling.
+    REQUIRE (chordNameInKey (RelChord { 8, Quality::Maj, -1, "bVI" }, 9, Scale::Major) == "F");
+    REQUIRE (chordNameInKey (RelChord { 0, Quality::Dom7, -1, "V/iv" }, 9, Scale::Minor) == "A7");
+    REQUIRE (chordNameInKey (RelChord { 6, Quality::HalfDim7, -1, "#iv\xC3\xB8" }, 0, Scale::Major) == "F#\xC3\xB8" "7");
+    // Slash bass that is a chord tone follows the numeral's root letter.
+    REQUIRE (chordNameInKey (RelChord { 1, Quality::Dim7, 4, "#i\xC2\xB0" }, 0, Scale::Major) == "C#\xC2\xB0" "7/E");
+    REQUIRE (chordNameInKey (RelChord { 7, Quality::Maj, 11, "V" }, 9, Scale::Minor) == "E/G#");
+    // No numeral: unchanged key spelling.
+    REQUIRE (chordNameInKey (RelChord { 1, Quality::Dim7, -1, {} }, 0, Scale::Major) == "Db\xC2\xB0" "7");
+}

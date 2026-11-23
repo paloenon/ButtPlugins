@@ -39,7 +39,7 @@ public:
     // Re-reads the palette (key / scale / complexity); changed labels cross-fade.
     void refresh (bool animate = true);
 
-    // Released without ⌥: the pad's chord as stored in the strip (complexity 0; the strip applies
+    // Released without ⌥: the pad's chord as stored in the strip (PadChord::base, before complexity; the strip applies
     // the current complexity itself, so turning Complexity later still re-voices it).
     std::function<void (const cb::RelChord&)> onPadCommitted;
 
@@ -52,7 +52,7 @@ private:
 
     ChordButtProcessor& processor;
     juce::OwnedArray<Pad> pads;
-    std::vector<cb::PadChord> palette, basePalette;   // current complexity / complexity 0
+    std::vector<cb::PadChord> palette;   // current complexity (PadChord::base is what a click stores)
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PadGrid)
 };

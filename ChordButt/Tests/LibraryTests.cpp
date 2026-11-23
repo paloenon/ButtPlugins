@@ -231,18 +231,16 @@ TEST_CASE ("Library: loading an entry sets scale, keeps root, replaces strip")
 
 TEST_CASE ("Library: search uses key-aware chord spelling")
 {
-    // In A, a raised seventh (G#) is found as "G#", never as "Ab".
     const auto& lib = bundled();
-    size_t expected = 0;
-    for (const auto& e : lib.entries())
-        for (const auto& c : e.chords)
-            if (chordNameInKey (resolve (c, 9), 9, e.scale).find ("G#") != std::string::npos) { ++expected; break; }
-    REQUIRE (lib.filter ("", "", "g#", 9).size() == expected);
-    for (auto* e : lib.filter ("", "", "ab", 9))   // only by name, or a genuinely flat chord (e.g. bVI in A major = F, not Ab)
+    auto hasId = [] (const std::vector<const LibraryEntry*>& v, const std::string& id)
     {
-        bool found = juce::String (e->name).containsIgnoreCase ("ab");
-        for (const auto& c : e->chords)
-            found = found || chordNameInKey (resolve (c, 9), 9, e->scale).find ("Ab") != std::string::npos;
-        REQUIRE (found);
-    }
+        return std::any_of (v.begin(), v.end(), [&] (const LibraryEntry* e) { return e->id == id; });
+    };
+    // In A, hiphop-013's vii°7 (harmonic minor leading tone) is G#°7: found as "g#", not as "ab".
+    REQUIRE (hasId (lib.filter ("", "", "g#", 9), "hiphop-013"));
+    REQUIRE_FALSE (hasId (lib.filter ("", "", "ab", 9), "hiphop-013"));
+    // jazz-011's #i°7 is spelled from its numeral: A#°7 in A, C#°7 in C.
+    REQUIRE (hasId (lib.filter ("", "", "a#", 9), "jazz-011"));
+    REQUIRE (hasId (lib.filter ("", "", "c#\xC2\xB0" "7", 0), "jazz-011"));
+    REQUIRE_FALSE (hasId (lib.filter ("", "", "bb\xC2\xB0" "7", 9), "jazz-011"));
 }
