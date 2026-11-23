@@ -60,6 +60,8 @@ public:
 
     void flashBorder();
     PlayButton& getPlayButton() { return playButton; }
+    juce::Rectangle<float> getSlotBounds (int index) const;   // current (animated) slot rect; snapshots/tests
+    bool isReordering() const { return reordering; }
     DragButton& getDragButton() { return dragButton; }
 
     void paint (juce::Graphics&) override;
@@ -78,9 +80,10 @@ private:
     {
         FadeText name;
         double lengthBars = 1.0;
-        juce::String overrideText;   // "INV 2" when the slot has its own voicing
+        FadeText overrideText;       // "INV 2" when the slot has its own voicing
+        FadeText chipText;           // "½" / "1 BAR" …
         bool placed = false;
-        cb::Anim x, w, selected, hover, playing, appear, lift;
+        cb::Anim x, w, selected, hover, playing, appear, lift, chipLong;
     };
 
     struct Span { float x, w; };
@@ -92,7 +95,7 @@ private:
     std::vector<int> displayOrder() const;              // strip order, or the prospective reorder
     juce::Rectangle<float> slotRect (const SlotVis&) const;
     juce::Rectangle<float> removeRect (juce::Rectangle<float> slot) const;
-    juce::Rectangle<float> chipRect (juce::Rectangle<float> slot) const;
+    juce::Rectangle<float> chipRect (juce::Rectangle<float> slot, float longForm) const;
     int slotAt (juce::Point<float>) const;
     Part partAt (int slot, juce::Point<float>) const;
     float beatToX (double beat) const;
@@ -103,8 +106,10 @@ private:
     void removeSlot (int index);
     void cycleLength (int index);
     int computeDropIndex() const;
-    void commit();
-    void syncIfStale();                                  // strip changed elsewhere and refresh() has not run yet                                       // stripChanged + local refresh
+    void commit();                                       // stripChanged + local refresh
+    void syncIfStale();                                  // strip changed elsewhere and refresh() has not run yet
+    void cancelGesture();                                // drop any reorder in progress (indices may be stale)
+    bool validSlot (int index) const { return index >= 0 && index < (int) vis.size(); }
     void startExternalDrag (const juce::var& description, const juce::String& label);
 
     ChordButtProcessor& processor;

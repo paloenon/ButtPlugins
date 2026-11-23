@@ -82,15 +82,18 @@ void ChordStrip::DragButton::paint (Graphics& g)
 
     Path outline;
     outline.addRoundedRectangle (r, Theme::cornerRadius);
-    ChordLookAndFeel::drawGlow (g, outline, Theme::accent, en * (0.3f + 0.7f * h), 1.0f);
+    // Neutral at rest (like any button); accent border, wash and glow only on hover / while dragging.
+    const float active = en * h;
+    ChordLookAndFeel::drawGlow (g, outline, Theme::accent, active, 1.0f);
 
-    g.setColour (Theme::surface2.interpolatedWith (Theme::accent, 0.08f * en * h));
+    g.setColour (Theme::surface2.interpolatedWith (Theme::accent, 0.08f * active).withMultipliedAlpha (alpha));
     g.fillPath (outline);
-    g.setColour (Theme::line.interpolatedWith (Theme::accent, en * (0.6f + 0.4f * h)).withMultipliedAlpha (alpha));
+    g.setColour (Theme::line.interpolatedWith (Theme::accent, active).withMultipliedAlpha (alpha));
     g.strokePath (outline, PathStrokeType (Theme::lineWidth));
 
     // Grip: 2 x 3 dots, then the label.
-    const auto textColour = Theme::dim.interpolatedWith (Theme::accent, en).withMultipliedAlpha (alpha);
+    const auto textColour = Theme::dim.interpolatedWith (Theme::text, 0.8f * en).interpolatedWith (Theme::accent, active)
+                                .withMultipliedAlpha (alpha);
     g.setColour (textColour);
     const float gx = r.getX() + 14.0f, gy = r.getCentreY();
     for (int col = 0; col < 2; ++col)
@@ -195,11 +198,12 @@ std::vector<ChordStrip::Span> ChordStrip::layout (const std::vector<int>& order)
 
 std::vector<int> ChordStrip::displayOrder() const
 {
+    const bool dragging = reordering && validSlot (downSlot);
     std::vector<int> order;
     for (int i = 0; i < (int) vis.size(); ++i)
-        if (! (reordering && i == downSlot))
+        if (! (dragging && i == downSlot))
             order.push_back (i);
-    if (reordering && downSlot >= 0)
+    if (dragging)
         order.insert (order.begin() + jlimit (0, (int) order.size(), dropIndex), downSlot);
     return order;
 }
@@ -239,17 +243,24 @@ Rectangle<float> ChordStrip::removeRect (Rectangle<float> slot) const
     return { slot.getRight() - 18.0f, slot.getY() + 2.0f, 16.0f, 16.0f };
 }
 
-Rectangle<float> ChordStrip::chipRect (Rectangle<float> slot) const
+Rectangle<float> ChordStrip::chipRect (Rectangle<float> slot, float longForm) const
 {
-    const bool longForm = slot.getWidth() > 96.0f;
-    const float w = longForm ? 44.0f : jmin (20.0f, slot.getWidth() - 4.0f);
-    const float x = slot.getWidth() < 34.0f ? slot.getCentreX() - w * 0.5f : slot.getX() + 5.0f;   // centred in tiny slots
+    // Width grows with the animated long-form amount; in tiny slots the chip drifts to the centre.
+    // Everything is a continuous function of animated values, so nothing snaps.
+    const float w = jmin (20.0f + 24.0f * longForm, jmax (0.0f, slot.getWidth() - 4.0f));
+    const float toLeft = jlimit (0.0f, 1.0f, (slot.getWidth() - 28.0f) / 12.0f);
+    const float x = jmap (toLeft, slot.getCentreX() - w * 0.5f, slot.getX() + 5.0f);
     return { x, slot.getBottom() - 19.0f, w, 14.0f };
+}
+
+Rectangle<float> ChordStrip::getSlotBounds (int index) const
+{
+    return validSlot (index) ? slotRect (vis[(size_t) index]) : Rectangle<float>();
 }
 
 int ChordStrip::slotAt (Point<float> p) const
 {
-    if (reordering && downSlot >= 0 && slotRect (vis[(size_t) downSlot]).contains (p))
+    if (reordering && validSlot (downSlot) && slotRect (vis[(size_t) downSlot]).contains (p))
         return downSlot;
     for (int i = 0; i < (int) vis.size(); ++i)
         if (slotRect (vis[(size_t) i]).contains (p))
@@ -259,12 +270,12 @@ int ChordStrip::slotAt (Point<float> p) const
 
 ChordStrip::Part ChordStrip::partAt (int slot, Point<float> p) const
 {
-    if (slot < 0)
+    if (! validSlot (slot))
         return Part::none;
     const auto r = slotRect (vis[(size_t) slot]);
     if (r.getWidth() > 40.0f && removeRect (r).expanded (2.0f).contains (p))
         return Part::remove;
-    if (chipRect (r).expanded (2.0f).contains (p))
+    if (chipRect (r, vis[(size_t) slot].chipLong.value).expanded (2.0f).contains (p))
         return Part::lengthChip;
     return Part::body;
 }
@@ -323,20 +334,30 @@ void ChordStrip::commit()
     refresh();
 }
 
+void ChordStrip::cancelGesture()
+{
+    if (reordering && validSlot (downSlot))
+        vis[(size_t) downSlot].lift.setTarget (0.0f);
+    reordering = false;
+    downSlot = -1;
+    dropIndex = -1;
+    downPart = Part::none;
+}
+
 void ChordStrip::syncIfStale()
 {
     if (vis.size() != processor.strip().slots().size())
-    {
-        reordering = false;
-        downSlot = -1;
-        refresh();
-    }
+        refresh();   // refresh() cancels the gesture on a size change
 }
 
 void ChordStrip::refresh()
 {
     const auto& slots = processor.strip().slots();
     const size_t n = slots.size();
+
+    // The strip was resized (or replaced) under a running gesture: its indices are meaningless now.
+    if (vis.size() != n || downSlot >= (int) n)
+        cancelGesture();
 
     while (vis.size() > n)
     {
@@ -357,7 +378,7 @@ void ChordStrip::refresh()
         auto& v = vis[i];
         v.name.set (slotName ((int) i, false));
         v.lengthBars = slots[i].lengthBars;
-        v.overrideText = slots[i].inversionOverride ? "INV " + String (*slots[i].inversionOverride) : String();
+        v.overrideText.set (slots[i].inversionOverride ? "INV " + String (*slots[i].inversionOverride) : String());
     }
 
     if (selected >= (int) n)
@@ -540,8 +561,8 @@ void ChordStrip::paintSlot (Graphics& g, const SlotVis& v, float alpha) const
     }
 
     // Name: shrinks (down to 9 px) rather than squashing in narrow slots, then truncates.
-    const bool narrow = r.getWidth() < 50.0f;
-    auto nameRow = Rectangle<float> (r.getX() + (narrow ? 2.0f : 6.0f), r.getY() + 5.0f, r.getWidth() - (narrow ? 4.0f : 12.0f), 20.0f);
+    const float inset = jmap (jlimit (0.0f, 1.0f, (r.getWidth() - 40.0f) / 20.0f), 2.0f, 6.0f);   // continuous in width
+    auto nameRow = Rectangle<float> (r.getX() + inset, r.getY() + 5.0f, r.getWidth() - 2.0f * inset, 20.0f);
     const auto nameColour = Theme::text.interpolatedWith (Theme::accent, 0.8f * play);
     v.name.draw ([&] (const String& s, float a, float dy)
     {
@@ -554,25 +575,30 @@ void ChordStrip::paintSlot (Graphics& g, const SlotVis& v, float alpha) const
         g.drawText (s, nameRow.translated (0.0f, dy), Justification::centred, true);
     }, 2.0f);
 
-    // Length chip.
-    const auto chip = chipRect (r);
+    // Length chip (text cross-fades, incl. the short/long form switch; width follows chipLong).
+    const auto chip = chipRect (r, v.chipLong.value);
     g.setColour (Theme::line.withMultipliedAlpha (alpha));
     g.drawRoundedRectangle (chip.reduced (0.5f), 3.0f, Theme::lineWidth);
-    g.setColour (Theme::dim.withMultipliedAlpha (alpha));
     g.setFont (Theme::uiFont (9.5f, "Semibold", 0.08f));
-    g.drawText (lengthLabel (v.lengthBars, chip.getWidth() > 30.0f), chip, Justification::centred, false);
-
-    // Per-chord voicing marker.
-    if (v.overrideText.isNotEmpty() && r.getWidth() > chip.getWidth() + 44.0f)
+    v.chipText.draw ([&] (const String& s, float a, float)
     {
-        g.setColour (Theme::accent.withMultipliedAlpha (0.85f * alpha));
-        g.drawText (v.overrideText, Rectangle<float> (r.getRight() - 46.0f, chip.getY(), 40.0f, chip.getHeight()),
-                    Justification::centredRight, false);
-    }
+        g.setColour (Theme::dim.withMultipliedAlpha (a * alpha));
+        g.drawText (s, chip, Justification::centred, false);
+    }, 0.0f);
+
+    // Per-chord voicing marker: fades with its text and with the room the slot has for it.
+    const float room = jlimit (0.0f, 1.0f, (r.getWidth() - chip.getWidth() - 44.0f) / 10.0f);
+    if (room > 0.001f)
+        v.overrideText.draw ([&] (const String& s, float a, float dy)
+        {
+            g.setColour (Theme::accent.withMultipliedAlpha (0.85f * alpha * a * room));
+            g.drawText (s, Rectangle<float> (r.getRight() - 46.0f, chip.getY() + dy, 40.0f, chip.getHeight()),
+                        Justification::centredRight, false);
+        }, 2.0f);
 
     // Remove "×" (on hover / selection).
-    const float xa = jmax (hov, sel) * alpha;
-    if (xa > 0.001f && r.getWidth() > 40.0f)
+    const float xa = jmax (hov, sel) * alpha * jlimit (0.0f, 1.0f, (r.getWidth() - 36.0f) / 10.0f);   // fades out in narrow slots
+    if (xa > 0.001f)
     {
         const auto c = removeRect (r).getCentre();
         const float d = 3.2f;
@@ -611,7 +637,7 @@ void ChordStrip::paint (Graphics& g)
     for (const auto& ghost : ghosts)
         paintSlot (g, ghost, 1.0f);
     for (int i = 0; i < (int) vis.size(); ++i)
-        if (! (reordering && i == downSlot))
+        if (! (reordering && validSlot (downSlot) && i == downSlot))
             paintSlot (g, vis[(size_t) i], 1.0f);
 
     if (playheadAlpha.value > 0.001f && ! vis.empty())
@@ -625,7 +651,7 @@ void ChordStrip::paint (Graphics& g)
         g.strokePath (line, PathStrokeType (1.5f));
     }
 
-    if (reordering && downSlot >= 0)
+    if (reordering && validSlot (downSlot))
         paintSlot (g, vis[(size_t) downSlot], 1.0f);
 }
 
@@ -643,7 +669,7 @@ void ChordStrip::mouseDown (const MouseEvent& e)
 void ChordStrip::mouseDrag (const MouseEvent& e)
 {
     syncIfStale();
-    if (downSlot < 0 || downPart != Part::body || externalDrag)
+    if (! validSlot (downSlot) || downPart != Part::body || externalDrag)
         return;
 
     if (! reordering)
@@ -686,6 +712,8 @@ void ChordStrip::mouseUp (const MouseEvent& e)
     if (reordering)
     {
         reordering = false;
+        if (! validSlot (from))
+            return;
         vis[(size_t) from].lift.setTarget (0.0f);
         const int to = dropIndex;
         if (to != from && to >= 0 && to < (int) vis.size())
@@ -707,7 +735,7 @@ void ChordStrip::mouseUp (const MouseEvent& e)
     }
 
     const int upSlot = slotAt (e.position);
-    if (from >= 0 && upSlot == from && partAt (upSlot, e.position) == downPart)
+    if (validSlot (from) && upSlot == from && partAt (upSlot, e.position) == downPart)
     {
         switch (downPart)
         {
@@ -803,9 +831,17 @@ bool ChordStrip::tickAnimations (float dt)
         v.selected.setTarget (i == selected ? 1.0f : 0.0f);
         v.hover.setTarget (i == hovered && ! reordering && isMouseOver() ? 1.0f : 0.0f);
         v.playing.setTarget (i == playingSlot ? 1.0f : 0.0f);
-        for (auto* a : { &v.x, &v.w, &v.selected, &v.hover, &v.playing, &v.appear, &v.lift })
+        const bool longForm = v.w.target > 96.0f;   // decided on the target width, so it switches once
+        v.chipLong.setTarget (longForm ? 1.0f : 0.0f);
+        const bool firstFrame = v.chipText.current().isEmpty();
+        v.chipText.set (lengthLabel (v.lengthBars, longForm));   // first set() shows without fading
+        if (firstFrame)
+            v.chipLong.snap (v.chipLong.target);
+        for (auto* a : { &v.x, &v.w, &v.selected, &v.hover, &v.playing, &v.appear, &v.lift, &v.chipLong })
             moving = AnimUtil::tick (*a, dt) || moving;
         moving = v.name.tick (dt) || moving;
+        moving = v.chipText.tick (dt) || moving;
+        moving = v.overrideText.tick (dt) || moving;
     }
 
     for (auto& ghost : ghosts)

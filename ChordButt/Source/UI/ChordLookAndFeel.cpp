@@ -282,17 +282,33 @@ void LabelledKnob::paint (Graphics& g)
         g.drawText (s, labelRow.translated (0.0f, dy), Justification::centred, false);
     });
 
-    if (formatValue)
+    auto valueRow = r.removeFromTop (16.0f);
+    g.setFont (Theme::uiFont (11.0f, "Regular"));
+    valueText.draw ([&] (const String& s, float a, float dy)
     {
-        g.setFont (Theme::uiFont (11.0f, "Regular"));
-        g.setColour (Theme::text.withAlpha (0.75f * alpha));
-        g.drawText (formatValue (knob.getValue()), r.removeFromTop (16.0f), Justification::centred, false);
-    }
+        g.setColour (Theme::text.withAlpha (0.75f * alpha * a));
+        g.drawText (s, valueRow.translated (0.0f, dy), Justification::centred, false);
+    }, 2.0f);
+}
+
+void LabelledKnob::updateValueText()
+{
+    if (! formatValue)
+        return;
+    // Programmatic and stepped changes cross-fade; a continuous knob under the mouse is a live
+    // readout and follows directly (like its pointer), otherwise it would lag behind the drag.
+    const bool live = knob.isMouseButtonDown() && knob.getInterval() <= 0.0;
+    valueText.set (formatValue (knob.getValue()), ! live);
+    repaint();
 }
 
 bool LabelledKnob::tickAnimations (float dt)
 {
+    // Also catches setValue (…, dontSendNotification), which does not reach the listener.
+    if (formatValue && formatValue (knob.getValue()) != valueText.current())
+        updateValueText();
+    const bool v = valueText.tick (dt);
     const bool l = label.tick (dt);
     const bool a = AnimUtil::tick (accent, dt);
-    return l || a;
+    return v || l || a;
 }

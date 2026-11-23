@@ -171,7 +171,7 @@ void StylePanel::layoutForMode()
         m.target = r;
     };
 
-    const int knobW = knobPitch, knobH = LabelledKnob::knobSize + LabelledKnob::textHeight;
+    const int knobW = knobPitch, knobH = LabelledKnob::defaultKnobSize + LabelledKnob::textHeight;
     auto knobAt = [&] (Component& c, int slot) { place (c, { x0 + slot * knobPitch, knobY, knobW, knobH }); };
 
     int humanizeSlot = 0;
@@ -192,7 +192,7 @@ void StylePanel::layoutForMode()
         humanizeSlot = 3;
     }
     knobAt (humanize, humanizeSlot);
-    place (reroll, { x0 + (humanizeSlot + 1) * knobPitch + 6, knobY + LabelledKnob::knobSize / 2 - 13, 78, 26 });
+    place (reroll, { x0 + (humanizeSlot + 1) * knobPitch + 6, knobY + LabelledKnob::defaultKnobSize / 2 - 13, 78, 26 });
 
     // Hidden controls keep their last position (they fade out in place); shown ones without a
     // position yet start where they belong.

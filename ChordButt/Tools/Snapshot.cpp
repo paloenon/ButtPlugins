@@ -208,7 +208,10 @@ namespace
             f.settle();
             f.printDrag ("strip");
             f.printDrag ("slot:1");
-            return snap (*f.editor, dir, "strip");
+            bool ok = snap (*f.editor, dir, "strip");
+            f.editor->getChordStrip().getDragButton().setHighlighted (true);   // hover: accent appears only now
+            f.settle();
+            return snap (*f.editor, dir, "strip-drag-hover") && ok;
         }
         if (name == "mode-chords" || name == "mode-rhythm" || name == "mode-arp")
         {
@@ -242,6 +245,52 @@ namespace
             return snap (*f.editor, dir, "full-strip-flash");
         }
 
+        if (name == "reorder-shrink")
+        {
+            // Regression (review I1): a slot reorder is in progress when the strip shrinks from
+            // outside (host state restore / library load). Variant 0 refreshes via the editor (as the
+            // stateBroadcaster would), variant 1 leaves it to the strip's own per-frame resync.
+            bool ok = true;
+            for (int variant = 0; variant < 2; ++variant)
+            {
+                EditorFixture f;
+                f.addPads ({ 0, 5, 2, 6, 4, 3 });
+                f.settle();
+                auto& strip = f.editor->getChordStrip();
+                const auto last = strip.getSlotBounds (5).getCentre();
+                const auto t0 = Time::getCurrentTime();
+                auto event = [&] (Point<float> pos)
+                {
+                    return MouseEvent (Desktop::getInstance().getMainMouseSource(), pos, ModifierKeys (ModifierKeys::leftButtonModifier),
+                                       1.0f, 0.0f, 0.0f, 0.0f, 0.0f, &strip, &strip, t0, last, t0, 1, pos != last);
+                };
+
+                strip.mouseDown (event (last));
+                strip.mouseDrag (event (last.translated (-120.0f, 0.0f)));
+                f.editor->advanceAnimations (0.05f);
+                const bool started = strip.isReordering();
+
+                for (int i = 0; i < 4; ++i)                     // 6 -> 2 slots, dragged slot (5) is gone
+                    f.processor.strip().remove ((int) f.processor.strip().slots().size() - 1);
+                f.processor.stripChanged();
+                if (variant == 0)
+                    f.editor->refreshAll();
+                f.settle (0.5f);                                // ticks + layout with the new size
+                (void) f.editor->createComponentSnapshot (f.editor->getLocalBounds());   // paint path
+                strip.mouseDrag (event (last.translated (-200.0f, 0.0f)));
+                strip.mouseUp (event (last.translated (-200.0f, 0.0f)));
+                f.settle();
+
+                const bool pass = started && ! strip.isReordering() && f.processor.strip().slots().size() == 2;
+                std::cout << "reorder-shrink variant " << variant << ": " << (pass ? "PASS" : "FAIL")
+                          << " (started " << started << ", slots " << f.processor.strip().slots().size() << ")\n";
+                ok = pass && ok;
+                if (variant == 0)
+                    ok = snap (*f.editor, dir, "reorder-shrink") && ok;
+            }
+            return ok;
+        }
+
         std::cerr << "unknown scenario: " << name << "\n";
         return false;
     }
@@ -251,7 +300,7 @@ int main (int argc, char* argv[])
 {
     if (argc < 2)
     {
-        std::cerr << "usage: ChordButtSnapshot <outDir> [default|knob|hover-knob|mid-anim|library-open|hover-header|pads|strip|mode-chords|mode-rhythm|mode-arp|empty-strip|full-strip-flash ...]\n";
+        std::cerr << "usage: ChordButtSnapshot <outDir> [default|knob|hover-knob|mid-anim|library-open|hover-header|pads|strip|mode-chords|mode-rhythm|mode-arp|empty-strip|full-strip-flash|reorder-shrink ...]\n";
         return 2;
     }
 
@@ -265,7 +314,7 @@ int main (int argc, char* argv[])
         scenarios.add (argv[i]);
     if (scenarios.isEmpty())
         scenarios.addArray ({ "default", "knob", "hover-knob", "mid-anim", "library-open", "hover-header", "pads", "strip",
-                              "mode-chords", "mode-rhythm", "mode-arp", "empty-strip", "full-strip-flash" });
+                              "mode-chords", "mode-rhythm", "mode-arp", "empty-strip", "full-strip-flash", "reorder-shrink" });
 
     bool ok = true;
     for (auto& s : scenarios)

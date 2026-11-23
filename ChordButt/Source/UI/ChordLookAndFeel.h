@@ -82,9 +82,11 @@ private:
 class LabelledKnob : public juce::Component, public Animated, private juce::Slider::Listener
 {
 public:
-    static constexpr int knobSize = 56, textHeight = 32;
+    static constexpr int defaultKnobSize = 56, textHeight = 32;
 
     explicit LabelledKnob (const juce::String& label);
+    void setKnobSize (int size) { knobSize = size; resized(); }
+    int getKnobSize() const { return knobSize; }
     ~LabelledKnob() override;
 
     GlowSlider& getSlider() { return knob; }
@@ -96,9 +98,12 @@ public:
     bool tickAnimations (float dt) override;
 
 private:
-    void sliderValueChanged (juce::Slider*) override { repaint(); }
+    void sliderValueChanged (juce::Slider*) override { updateValueText(); }
+
+    void updateValueText();
 
     GlowSlider knob;
-    FadeText label;
+    FadeText label, valueText;
     cb::Anim accent;
+    int knobSize = defaultKnobSize;
 };

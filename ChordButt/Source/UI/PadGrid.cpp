@@ -1,5 +1,4 @@
 #include "UI/PadGrid.h"
-#include "UI/StylePanel.h"
 #include "UI/Theme.h"
 #include "Core/Voicing.h"
 
@@ -16,6 +15,8 @@ namespace
         v.octave = jlimit (-2, 2, roundToInt (raw ("octave")));
         return v;
     }
+
+    constexpr int shapeKnobSize = 76;
 
     int globalInversion (AudioProcessorValueTreeState& apvts)
     {
@@ -344,10 +345,12 @@ void VoicingPanel::paint (Graphics& g)
 
 void VoicingPanel::resized()
 {
+    // The four shape knobs are the primary controls: larger, directly under the title (aligned with
+    // the style panel's second row), so the panel has no dead band between title and knobs.
     auto r = getLocalBounds().reduced (16, 0);
     const int pitch = r.getWidth() / 4;
-    const int knobH = LabelledKnob::knobSize + LabelledKnob::textHeight;
-    const int y = StylePanel::knobRowY;   // same baseline as the style panel's knobs
+    const int knobH = shapeKnobSize + LabelledKnob::textHeight;
+    const int y = 42;
 
     LabelledKnob* knobs[] { &voicing, &spread, &octave, &complexity };
     for (int i = 0; i < 4; ++i)
@@ -355,9 +358,10 @@ void VoicingPanel::resized()
         const int cx = r.getX() + pitch * i + pitch / 2;
         // Voicing is wider so "VOICING · CHORD 16" fits; it ignores the mouse outside its knob.
         const int w = i == 0 ? 150 : pitch;
+        knobs[i]->setKnobSize (shapeKnobSize);
         knobs[i]->setBounds (cx - w / 2, y, w, knobH);
     }
 
     const int vcx = r.getX() + pitch / 2;
-    reset.setBounds (vcx + LabelledKnob::knobSize / 2 - 6, y - 4, 18, 18);
+    reset.setBounds (vcx + shapeKnobSize / 2 - 6, y - 2, 18, 18);
 }
