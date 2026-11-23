@@ -1,5 +1,7 @@
 #pragma once
 #include "PluginProcessor.h"
+#include "Core/HostWatch.h"
+#include "UI/HostHint.h"
 #include "UI/ChordLookAndFeel.h"
 #include "UI/ChordStrip.h"
 #include "UI/HeaderBar.h"
@@ -45,6 +47,7 @@ public:
     StylePanel& getStylePanel() { return stylePanel; }
     ChordStrip& getChordStrip() { return chordStrip; }
     LibraryDrawer& getLibraryDrawer() { return libraryDrawer; }
+    HostHint& getHostHint() { return hostHint; }
 
 private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
@@ -57,6 +60,8 @@ private:
     StylePanel stylePanel;
     ChordStrip chordStrip;
     LibraryDrawer libraryDrawer;      // above the pads and panels; never covers header or strip
+    HostHint hostHint;                // over the header's free middle
+    cb::HostWatch hostWatch;
     double lastFrameTime = -1.0;      // declared before vblank, whose callback uses it
     juce::VBlankAttachment vblank;
 

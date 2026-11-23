@@ -7,7 +7,8 @@
 #include "UI/ChordLookAndFeel.h"
 
 // 2 x 7 chord pads built from the processor's current palette. Press = audition through MIDI out;
-// release = commit (append to the strip, or replace the selected slot) unless ⌥ is held.
+// release over the pad = commit the auditioned chord (append to the strip, or replace the selected
+// slot) unless ⌥ is held; release outside the pad cancels.
 class PadGrid : public juce::Component
 {
 public:
@@ -48,11 +49,13 @@ public:
 
 private:
     void padPressed (int index);
-    void padReleased (int index, bool auditionOnly);
+    // inside: released over the pad (outside = cancel). auditionOnly: ⌥ held.
+    void padReleased (bool inside, bool auditionOnly);
 
     ChordButtProcessor& processor;
     juce::OwnedArray<Pad> pads;
     std::vector<cb::PadChord> palette;   // current complexity (PadChord::base is what a click stores)
+    std::optional<cb::RelChord> pressedChord;   // captured on mouseDown: the chord that was auditioned
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PadGrid)
 };

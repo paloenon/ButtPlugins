@@ -48,6 +48,7 @@ ChordButtEditor::ChordButtEditor (ChordButtProcessor& p)
     for (auto* c : std::initializer_list<juce::Component*> { &header, &padGrid, &voicingPanel, &stylePanel, &chordStrip })
         addAndMakeVisible (c);
     addChildComponent (libraryDrawer);   // hidden until opened
+    addAndMakeVisible (hostHint);
     setWantsKeyboardFocus (true);
 
     chordProcessor.stateBroadcaster.addChangeListener (this);
@@ -59,11 +60,19 @@ ChordButtEditor::~ChordButtEditor()
 {
     chordProcessor.stateBroadcaster.removeChangeListener (this);
     chordProcessor.preview().auditionOff();
+    chordProcessor.preview().stop();   // the strip loop must not keep playing with the window closed
     setLookAndFeel (nullptr);
 }
 
 void ChordButtEditor::advanceAnimations (float dtSeconds)
 {
+    // No process() calls while something should sound: hint, and do not let ■ stick forever.
+    auto& engine = chordProcessor.preview();
+    const auto watch = hostWatch.update (dtSeconds, chordProcessor.processHeartbeat(), engine.requestCount(), engine.isPlaying());
+    if (watch.stopPlayback)
+        engine.stop();   // the library drawer notices and restores the strip's sequence
+    hostHint.setShown (watch.showHint);
+
     tickTree (*this, dtSeconds);
 }
 
@@ -147,4 +156,8 @@ void ChordButtEditor::resized()
     panels.removeFromLeft (12);
     stylePanel.setBounds (panels);
     libraryDrawer.setBounds (drawerArea());
+
+    // Hint between the wordmark and the KEY selector.
+    const auto wordmark = header.getWordmark().getBounds(), key = header.getRootBox().getBounds();
+    hostHint.setBounds (juce::Rectangle<int>::leftTopRightBottom (wordmark.getRight() + 16, 0, key.getX() - 16, HeaderBar::height));
 }

@@ -53,6 +53,9 @@ public:
     int tonic() const;
     cb::Scale scale() const;
     double hostBpm() const;                              // effectiveBpm of the last seen host tempo (any thread)
+    // Incremented by every processBlock / processBlockBypassed (any thread): lets the UI notice that
+    // the host is not processing (Logic: track neither selected nor record-enabled while stopped).
+    uint32_t processHeartbeat() const { return heartbeat.load (std::memory_order_relaxed); }
     cb::PreviewEngine& preview() { return previewEngine; }
     void newHumanizeSeed();
 
@@ -67,12 +70,15 @@ private:
     void rebuildPreview();
     void parameterChanged (const juce::String&, float) override;   // may run on any thread
     void timerCallback() override;
+    std::optional<double> readHostPosition();            // audio thread: tempo + transport start
 
     cb::Strip stripData;
     uint32_t seed = 1;
     cb::PreviewEngine previewEngine;
     std::atomic<bool> dirty { false };
     std::atomic<double> lastHostBpm { 0.0 };   // <= 0: none seen yet
+    std::atomic<uint32_t> heartbeat { 0 };
+    bool hostWasPlaying = false;               // audio thread only
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ChordButtProcessor)
 };

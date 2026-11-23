@@ -94,7 +94,7 @@ void PadGrid::Pad::mouseUp (const MouseEvent& e)
     if (! held)
         return;
     held = false;
-    owner.padReleased (index, e.mods.isAltDown());
+    owner.padReleased (getLocalBounds().contains (e.getPosition()), e.mods.isAltDown());
 }
 
 bool PadGrid::Pad::tickAnimations (float dt)
@@ -151,19 +151,23 @@ void PadGrid::resized()
 
 void PadGrid::padPressed (int index)
 {
+    pressedChord.reset();
     if (index >= (int) palette.size())
         return;
+    pressedChord = palette[(size_t) index].base;
     const auto chord = cb::resolve (palette[(size_t) index].chord, processor.tonic());
     processor.preview().auditionOn (cb::voiceChord (chord, globalVoicing (processor.apvts)));
 }
 
-void PadGrid::padReleased (int index, bool auditionOnly)
+void PadGrid::padReleased (bool inside, bool auditionOnly)
 {
     processor.preview().auditionOff();
-    if (auditionOnly || index >= (int) palette.size())
+    const auto chord = pressedChord;
+    pressedChord.reset();
+    if (! chord || ! inside || auditionOnly)
         return;
     if (onPadCommitted)
-        onPadCommitted (palette[(size_t) index].base);
+        onPadCommitted (*chord);
 }
 
 // =============================================================================================

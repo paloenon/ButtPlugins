@@ -64,6 +64,19 @@ namespace
         GlowSlider knob;
     };
 
+    // Host playhead whose transport can be started (Logic: Play / Record).
+    struct FakePlayHead : public AudioPlayHead
+    {
+        bool playing = false;
+        Optional<PositionInfo> getPosition() const override
+        {
+            PositionInfo info;
+            info.setIsPlaying (playing);
+            info.setBpm (120.0);
+            return info;
+        }
+    };
+
     struct EditorFixture
     {
         EditorFixture()
@@ -74,7 +87,28 @@ namespace
         }
         ~EditorFixture() { editor.reset(); }
 
-        void settle (float seconds = 1.0f) { advance (seconds, [&] (float dt) { editor->advanceAnimations (dt); }); }
+        // host: the host calls process() once per frame (Logic with the track selected); otherwise it
+        // stays silent (Logic stopped, track not selected).
+        void settle (float seconds = 1.0f, bool host = true)
+        {
+            advance (seconds, [&] (float dt)
+            {
+                if (host)
+                    block();
+                editor->advanceAnimations (dt);
+            });
+        }
+
+        int block()   // one 512-sample host block; returns the number of note-ons it produced
+        {
+            AudioBuffer<float> audio (0, 512);
+            MidiBuffer midi;
+            processor.processBlock (audio, midi);
+            int ons = 0;
+            for (const auto m : midi)
+                ons += m.getMessage().isNoteOn() ? 1 : 0;
+            return ons;
+        }
 
         void setParam (const String& id, float value)
         {
@@ -400,6 +434,140 @@ namespace
             return snap (*f.editor, dir, "full-strip-flash");
         }
 
+        if (name == "host-silent")
+        {
+            // Logic stopped and the track not selected: no process() calls at all.
+            EditorFixture f;
+            f.addPads ({ 0, 5, 2, 6 });
+            f.settle (1.0f, false);
+            auto& hint = f.editor->getHostHint();
+            const bool quiet = ! hint.isShown();
+
+            f.editor->getChordStrip().getPlayButton().onClick();
+            f.settle (0.2f, false);
+            const bool notYet = ! hint.isShown() && f.processor.preview().isPlaying();
+            f.settle (0.15f, false);   // 0.35 s: hint fading in, still ■
+            bool ok = snap (*f.editor, dir, "host-hint-fading-in");
+            const bool shownWhilePlaying = hint.isShown() && f.processor.preview().isPlaying();
+            f.settle (0.65f, false);   // 1.0 s: play state reset, hint still there
+            ok = snap (*f.editor, dir, "host-hint") && ok;
+            const bool reset = hint.isShown() && ! f.processor.preview().isPlaying();
+
+            f.settle (0.5f, true);     // track selected: hint fades out at once
+            const bool gone = ! hint.isShown() && hint.getAmount() < 0.02f;
+            ok = snap (*f.editor, dir, "host-hint-gone") && ok;
+
+            // Library ▶ with a silent host: the row must not stay on ■.
+            auto& drawer = f.editor->getLibraryDrawer();
+            f.editor->setLibraryOpen (true);
+            f.settle (0.5f, false);
+            drawer.togglePreview (*drawer.getResult (0));
+            f.settle (1.0f, false);
+            const bool libraryReset = ! drawer.isPreviewing() && ! f.processor.preview().isPlaying() && hint.isShown();
+            ok = snap (*f.editor, dir, "host-hint-library") && ok;
+
+            // Pad audition with a silent host shows the hint too.
+            f.editor->setLibraryOpen (false);
+            f.settle (4.0f, true);
+            f.processor.preview().auditionOn ({ 57, 60, 64 });
+            f.settle (0.4f, false);
+            const bool audition = hint.isShown();
+            f.processor.preview().auditionOff();
+
+            const bool pass = quiet && notYet && shownWhilePlaying && reset && gone && libraryReset && audition;
+            std::cout << "host-silent: " << (pass ? "PASS" : "FAIL") << " (quiet " << quiet << ", notYet " << notYet
+                      << ", shownWhilePlaying " << shownWhilePlaying << ", reset " << reset << ", gone " << gone
+                      << ", libraryReset " << libraryReset << ", audition " << audition << ")\n";
+            return pass && ok;
+        }
+        if (name == "host-transport")
+        {
+            // Strip loop playing while Logic is stopped; Logic's transport starts -> preview stops.
+            EditorFixture f;
+            FakePlayHead head;
+            f.processor.setPlayHead (&head);
+            f.processor.prepareToPlay (44100.0, 512);
+            f.addPads ({ 0, 5 });
+            f.editor->getChordStrip().getPlayButton().onClick();
+            f.settle (0.5f);
+            const bool playing = f.processor.preview().isPlaying();
+            head.playing = true;
+            f.block();
+            const bool stopped = ! f.processor.preview().isPlaying();
+            f.settle (0.5f);
+            const bool staysStopped = ! f.processor.preview().isPlaying();
+            // Play pressed while the song plays: allowed (only the start of the transport stops it).
+            f.editor->getChordStrip().getPlayButton().onClick();
+            f.settle (0.3f);
+            const bool canPlayDuringSong = f.processor.preview().isPlaying();
+            f.processor.setPlayHead (nullptr);
+            const bool pass = playing && stopped && staysStopped && canPlayDuringSong;
+            std::cout << "host-transport: " << (pass ? "PASS" : "FAIL") << " (playing " << playing << ", stopped "
+                      << stopped << ", staysStopped " << staysStopped << ", canPlayDuringSong " << canPlayDuringSong << ")\n";
+            return pass;
+        }
+        if (name == "editor-close")
+        {
+            // Closing the plugin window stops the strip loop; all notes are released.
+            ChordButtProcessor processor;
+            processor.prepareToPlay (44100.0, 512);
+            std::unique_ptr<ChordButtEditor> editor (dynamic_cast<ChordButtEditor*> (processor.createEditor()));
+            const auto base = processor.currentPalette();
+            for (int pad : { 0, 5 })
+            {
+                cb::StripSlot slot;
+                slot.chord = base[(size_t) pad].base;
+                processor.strip().append (slot);
+            }
+            processor.stripChanged();
+            editor->refreshAll();
+            editor->getChordStrip().getPlayButton().onClick();
+            AudioBuffer<float> audio (0, 512);
+            int sounding = 0;
+            auto run = [&] (int blocks)
+            {
+                for (int i = 0; i < blocks; ++i)
+                {
+                    MidiBuffer midi;
+                    processor.processBlock (audio, midi);
+                    for (const auto m : midi)
+                        sounding += m.getMessage().isNoteOn() ? 1 : (m.getMessage().isNoteOff() ? -1 : 0);
+                }
+            };
+            run (20);
+            const bool wasPlaying = processor.preview().isPlaying() && sounding > 0;
+            editor.reset();
+            run (2000);
+            const bool pass = wasPlaying && ! processor.preview().isPlaying() && sounding == 0;
+            std::cout << "editor-close: " << (pass ? "PASS" : "FAIL") << " (wasPlaying " << wasPlaying << ", playing after close "
+                      << processor.preview().isPlaying() << ", notes still on " << sounding << ")\n";
+            return pass;
+        }
+        if (name == "drag-length")
+        {
+            // Exported regions end at the strip / slot length (so they loop like the preview).
+            EditorFixture f;
+            f.addPads ({ 0, 5, 2 }, { 1.0, 0.5, 2.0 });
+            f.setParam ("mode", 1.0f);   // rhythm: the last note ends before the slot does
+            bool ok = true;
+            const std::pair<const char*, double> cases[] { { "strip", 14.0 }, { "slot:1", 2.0 }, { "slot:2", 8.0 } };
+            for (const auto& [desc, beats] : cases)
+            {
+                StringArray files;
+                bool canMove = true;
+                DragAndDropTarget::SourceDetails details (String (desc), nullptr, {});
+                f.editor->shouldDropFilesWhenDraggedExternally (details, files, canMove);
+                MidiFile mf;
+                FileInputStream in { File (files[0]) };
+                const bool read = in.openedOk() && mf.readFrom (in);
+                const double last = read ? mf.getLastTimestamp() / 960.0 : -1.0;
+                const bool pass = std::abs (last - beats) < 1.0e-9;
+                std::cout << "drag-length " << desc << ": end " << last << " beats (want " << beats << ") " << (pass ? "PASS" : "FAIL") << "\n";
+                ok = pass && ok;
+            }
+            return ok;
+        }
+
         if (name == "reorder-shrink")
         {
             // Regression (review I1): a slot reorder is in progress when the strip shrinks from
@@ -455,7 +623,7 @@ int main (int argc, char* argv[])
 {
     if (argc < 2)
     {
-        std::cerr << "usage: ChordButtSnapshot <outDir> [default|knob|hover-knob|mid-anim|library-closed|library-mid|library-open-lofi-melancholic|library-preview|library-search-sharp|library-empty|hover-header|pads|strip|mode-chords|mode-rhythm|mode-arp|empty-strip|full-strip-flash|reorder-shrink ...]\n";
+        std::cerr << "usage: ChordButtSnapshot <outDir> [default|knob|hover-knob|mid-anim|library-closed|library-mid|library-open-lofi-melancholic|library-preview|library-search-sharp|library-empty|hover-header|pads|strip|mode-chords|mode-rhythm|mode-arp|empty-strip|full-strip-flash|reorder-shrink|host-silent|host-transport|editor-close|drag-length ...]\n";
         return 2;
     }
 
@@ -470,7 +638,8 @@ int main (int argc, char* argv[])
     if (scenarios.isEmpty())
         scenarios.addArray ({ "default", "knob", "hover-knob", "mid-anim", "library-closed", "library-mid",
                               "library-open-lofi-melancholic", "library-preview", "library-search-sharp", "library-empty", "hover-header", "pads", "strip",
-                              "mode-chords", "mode-rhythm", "mode-arp", "empty-strip", "full-strip-flash", "reorder-shrink" });
+                              "mode-chords", "mode-rhythm", "mode-arp", "empty-strip", "full-strip-flash", "reorder-shrink",
+                              "host-silent", "host-transport", "editor-close", "drag-length" });
 
     bool ok = true;
     for (auto& s : scenarios)

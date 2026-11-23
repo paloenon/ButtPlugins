@@ -84,22 +84,40 @@ void ChordButtProcessor::releaseResources()
     previewEngine.allNotesOff();
 }
 
-void ChordButtProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
+std::optional<double> ChordButtProcessor::readHostPosition()
 {
+    heartbeat.fetch_add (1, std::memory_order_relaxed);
+
     std::optional<double> bpm;
+    bool hostPlaying = false;
     if (auto* ph = getPlayHead())
         if (auto pos = ph->getPosition())
+        {
+            hostPlaying = pos->getIsPlaying();
             if (auto b = pos->getBpm())
                 if (*b > 0.0)
                 {
                     bpm = *b;
                     lastHostBpm.store (*b);
                 }
+        }
+
+    // The preview is independent of the song: when the host transport starts, stop it (lock-free).
+    if (hostPlaying && ! hostWasPlaying)
+        previewEngine.requestStop();
+    hostWasPlaying = hostPlaying;
+    return bpm;
+}
+
+void ChordButtProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
+{
+    const auto bpm = readHostPosition();
     previewEngine.process (midi, buffer.getNumSamples(), bpm);
 }
 
 void ChordButtProcessor::processBlockBypassed (juce::AudioBuffer<float>&, juce::MidiBuffer& midi)
 {
+    readHostPosition();
     previewEngine.processBypassed (midi);
 }
 
@@ -200,7 +218,11 @@ void ChordButtProcessor::loadLibraryEntry (const cb::LibraryEntry& entry)
     auto p = paramValues();
     cb::applyLibraryEntry (entry, p, stripData);   // root stays as it is
     if (auto* param = apvts.getParameter ("scale"))
+    {
+        param->beginChangeGesture();
         param->setValueNotifyingHost (param->convertTo0to1 ((float) (int) p.scale));
+        param->endChangeGesture();
+    }
     stripChanged();
 }
 
