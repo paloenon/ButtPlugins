@@ -36,7 +36,6 @@ ChordButtEditor::ChordButtEditor (ChordButtProcessor& p)
 {
     setLookAndFeel (&lookAndFeel);
 
-    padGrid.onPadCommitted = [this] (const cb::RelChord& chord) { chordStrip.addChord (chord); };
     chordStrip.onSelectionChanged = [this] (int index) { voicingPanel.setSelectedSlot (index); };
     voicingPanel.onStripEdited = [this] { chordStrip.refresh(); };
 

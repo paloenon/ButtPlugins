@@ -37,7 +37,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout ChordButtProcessor::createLa
                     names<cb::Scale> (numScales, [] (cb::Scale s) { return cb::scaleName (s); }), (int) cb::Scale::Minor));
     layout.add (std::make_unique<juce::AudioParameterInt> (ParameterID { "inversion", 1 }, "Voicing", 0, 3, 0));
     layout.add (std::make_unique<juce::AudioParameterFloat> (ParameterID { "spread", 1 }, "Spread",
-                    juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
+                    juce::NormalisableRange<float> (0.0f, 1.0f, 0.25f), 0.0f,   // five detents: Close / Bass / Open / Deep / Wide
+                    juce::AudioParameterFloatAttributes().withStringFromValueFunction (
+                        [] (float v, int) { return juce::String (cb::spreadLevelName (cb::spreadLevel (v))); })));
     layout.add (std::make_unique<juce::AudioParameterInt> (ParameterID { "octave", 1 }, "Octave", -2, 2, 0));
     layout.add (std::make_unique<juce::AudioParameterInt> (ParameterID { "complexity", 1 }, "Complexity", 0, 3, 1));
     layout.add (std::make_unique<juce::AudioParameterChoice> (ParameterID { "mode", 1 }, "Mode",

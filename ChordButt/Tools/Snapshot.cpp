@@ -422,6 +422,35 @@ namespace
             f.settle();
             return snap (*f.editor, dir, "empty-strip");
         }
+        if (name == "pad-drop" || name == "spread-open")
+        {
+            // A pad dragged over the strip between slot 1 and 2: the placeholder opens there, then the drop.
+            EditorFixture f;
+            f.addPads ({ 0, 5, 2, 6 });
+            if (name == "spread-open")
+                f.processor.apvts.getParameter ("spread")->setValueNotifyingHost (0.5f);
+            f.settle();
+            auto& strip = f.editor->getChordStrip();
+            const auto palette = f.processor.currentPalette();
+            const auto desc = ChordStrip::padDragDescription (palette[3].base, "Dm7");
+            const auto between = strip.getSlotBounds (1).getRight() + 2.0f;
+            DragAndDropTarget::SourceDetails details (desc, nullptr, Point<int> (roundToInt (between), strip.getHeight() / 2));
+            strip.itemDragEnter (details);
+            strip.itemDragMove (details);
+            std::cout << "pad-drop: insert index " << strip.getInsertIndex() << " (want 2)\n";
+            bool ok = strip.getInsertIndex() == 2;
+            f.editor->advanceAnimations (0.06f);
+            ok = snap (*f.editor, dir, name + "-opening") && ok;
+            f.settle (0.6f);
+            ok = snap (*f.editor, dir, name + "-placeholder") && ok;
+            strip.itemDropped (details);
+            const auto& slots = f.processor.strip().slots();
+            const bool placed = slots.size() == 5 && slots[2].chord.rootOffset == palette[3].base.rootOffset;
+            std::cout << "pad-drop: " << slots.size() << " slots, slot 2 is the dropped chord: " << (placed ? "PASS" : "FAIL") << "\n";
+            ok = ok && placed;
+            f.settle();
+            return snap (*f.editor, dir, name + "-dropped") && ok;
+        }
         if (name == "full-strip-flash")
         {
             EditorFixture f;
@@ -639,7 +668,7 @@ int main (int argc, char* argv[])
         scenarios.addArray ({ "default", "knob", "hover-knob", "mid-anim", "library-closed", "library-mid",
                               "library-open-lofi-melancholic", "library-preview", "library-search-sharp", "library-empty", "hover-header", "pads", "strip",
                               "mode-chords", "mode-rhythm", "mode-arp", "empty-strip", "full-strip-flash", "reorder-shrink",
-                              "host-silent", "host-transport", "editor-close", "drag-length" });
+                              "host-silent", "host-transport", "editor-close", "drag-length", "pad-drop", "spread-open" });
 
     bool ok = true;
     for (auto& s : scenarios)

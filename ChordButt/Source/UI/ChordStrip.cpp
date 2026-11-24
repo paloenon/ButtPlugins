@@ -182,16 +182,17 @@ float ChordStrip::barWidth (double totalBars) const
 std::vector<ChordStrip::Span> ChordStrip::layout (const std::vector<int>& order) const
 {
     const auto& slots = processor.strip().slots();
+    auto lengthOf = [&] (int i) { return i == phantomSlot ? 1.0 : slots[(size_t) i].lengthBars; };
     double total = 0.0;
     for (int i : order)
-        total += slots[(size_t) i].lengthBars;
+        total += lengthOf (i);
 
     const float bw = barWidth (total);
     std::vector<Span> spans;
     float x = slotArea().getX();
     for (int i : order)
     {
-        const float span = (float) slots[(size_t) i].lengthBars * bw;
+        const float span = (float) lengthOf (i) * bw;
         spans.push_back ({ x, span - slotGap });
         x += span;
     }
@@ -207,7 +208,34 @@ std::vector<int> ChordStrip::displayOrder() const
             order.push_back (i);
     if (dragging)
         order.insert (order.begin() + jlimit (0, (int) order.size(), dropIndex), downSlot);
+    else if (insertIndex >= 0)
+        order.insert (order.begin() + jlimit (0, (int) order.size(), insertIndex), phantomSlot);
     return order;
+}
+
+int ChordStrip::insertIndexAt (float x) const
+{
+    // Decided on the committed layout (without the placeholder) so the index does not flip back and
+    // forth while the other slots slide aside.
+    std::vector<int> order;
+    for (int i = 0; i < (int) vis.size(); ++i)
+        order.push_back (i);
+    const auto spans = layout (order);
+
+    int best = 0;
+    float bestDist = std::numeric_limits<float>::max();
+    for (int k = 0; k <= (int) spans.size(); ++k)
+    {
+        const float edge = k < (int) spans.size() ? spans[(size_t) k].x
+                                                  : (spans.empty() ? slotArea().getX() : spans.back().x + spans.back().w + slotGap);
+        const float d = std::abs (edge - x);
+        if (d < bestDist)
+        {
+            bestDist = d;
+            best = k;
+        }
+    }
+    return best;
 }
 
 int ChordStrip::computeDropIndex() const
@@ -404,26 +432,127 @@ void ChordStrip::setSelected (int index)
         onSelectionChanged (selected);
 }
 
-void ChordStrip::addChord (const cb::RelChord& chord)
+bool ChordStrip::insertChord (int index, const cb::RelChord& chord)
 {
+    syncIfStale();
+    cancelGesture();
     auto& strip = processor.strip();
-    if (selected >= 0 && selected < (int) strip.slots().size())
-    {
-        strip.replace (selected, chord);
-        commit();
-        if (onSelectionChanged)
-            onSelectionChanged (selected);   // the override was cleared: refresh the Voicing knob
-        return;
-    }
+    index = jlimit (0, (int) strip.slots().size(), index);
 
     cb::StripSlot slot;
     slot.chord = chord;
     if (! strip.append (slot))
     {
         flashBorder();
+        return false;
+    }
+    const int last = (int) strip.slots().size() - 1;
+    if (index != last)
+        strip.move (last, index);
+
+    // The new slot takes over the placeholder's place (if one was open) and fades in from there.
+    SlotVis v;
+    if (insertIndex >= 0 && phantom.appear.value > 0.001f)
+    {
+        v.x.snap (phantom.x.value);
+        v.w.snap (phantom.w.value);
+        v.placed = true;
+        v.appear.snap (0.6f);
+    }
+    else
+    {
+        v.appear.snap (0.0f);
+    }
+    v.appear.setTarget (1.0f);
+    vis.insert (vis.begin() + index, v);
+
+    if (selected >= index)
+        setSelected (selected + 1);
+    commit();
+    return true;
+}
+
+var ChordStrip::padDragDescription (const cb::RelChord& chord, const String& displayName)
+{
+    auto* o = new DynamicObject();
+    o->setProperty ("padChord", true);
+    o->setProperty ("root", chord.rootOffset);
+    o->setProperty ("quality", (int) chord.quality);
+    o->setProperty ("bass", chord.bassOffset);
+    o->setProperty ("roman", String (chord.roman));
+    o->setProperty ("name", displayName);
+    return var (o);
+}
+
+bool ChordStrip::decodePadDrag (const var& d, cb::RelChord& chord, String& displayName)
+{
+    if (! d.isObject() || ! (bool) d.getProperty ("padChord", false))
+        return false;
+    chord.rootOffset = jlimit (0, 11, (int) d.getProperty ("root", 0));
+    chord.quality = (cb::Quality) jlimit ((int) cb::Quality::Maj, (int) cb::Quality::Min13, (int) d.getProperty ("quality", 0));
+    chord.bassOffset = jlimit (-1, 11, (int) d.getProperty ("bass", -1));
+    chord.roman = d.getProperty ("roman", "").toString().toStdString();
+    displayName = d.getProperty ("name", "").toString();
+    return true;
+}
+
+bool ChordStrip::isInterestedInDragSource (const SourceDetails& details)
+{
+    cb::RelChord c;
+    String n;
+    return decodePadDrag (details.description, c, n);
+}
+
+void ChordStrip::itemDragEnter (const SourceDetails& details)
+{
+    syncIfStale();
+    cancelGesture();
+    if ((int) processor.strip().slots().size() >= cb::Strip::maxSlots)
+    {
+        flashBorder();   // full: no placeholder, the drop is refused
         return;
     }
-    commit();
+
+    cb::RelChord c;
+    String name;
+    decodePadDrag (details.description, c, name);
+    phantom.name.set (name, false);
+    phantom.lengthBars = 1.0;
+    insertIndex = insertIndexAt ((float) details.localPosition.x);
+
+    // Open the placeholder in place (narrow, at its gap) and let it grow, rather than flying in.
+    const auto order = displayOrder();
+    const auto spans = layout (order);
+    for (size_t k = 0; k < order.size(); ++k)
+        if (order[k] == phantomSlot)
+        {
+            phantom.x.snap (spans[k].x);
+            phantom.w.snap (0.0f);
+        }
+    phantom.appear.setTarget (1.0f);
+}
+
+void ChordStrip::itemDragMove (const SourceDetails& details)
+{
+    if (insertIndex >= 0)
+        insertIndex = insertIndexAt ((float) details.localPosition.x);
+}
+
+void ChordStrip::itemDragExit (const SourceDetails&)
+{
+    insertIndex = -1;
+    phantom.appear.setTarget (0.0f);
+}
+
+void ChordStrip::itemDropped (const SourceDetails& details)
+{
+    cb::RelChord chord;
+    String name;
+    if (insertIndex >= 0 && decodePadDrag (details.description, chord, name))
+        insertChord (insertIndex, chord);
+    insertIndex = -1;
+    phantom.appear.snap (0.0f);
+    phantom.appear.setTarget (0.0f);
 }
 
 void ChordStrip::removeSlot (int index)
@@ -635,12 +764,35 @@ void ChordStrip::paint (Graphics& g)
     {
         g.setColour (Theme::dim.withMultipliedAlpha (empty.value));
         g.setFont (Theme::uiFont (12.5f, "Regular"));
-        g.drawText ("Click pads or open the library to add chords", w.translated (0.0f, 3.0f * (1.0f - empty.value)),
+        g.drawText ("Drag pads here or open the library to add chords", w.translated (0.0f, 3.0f * (1.0f - empty.value)),
                     Justification::centred, false);
     }
 
     for (const auto& ghost : ghosts)
         paintSlot (g, ghost, 1.0f);
+
+    if (phantom.appear.value > 0.001f)   // drop placeholder: dashed accent outline with the chord's name
+    {
+        const float a = phantom.appear.value;
+        auto r = slotRect (phantom).reduced (0.0f, 4.0f * (1.0f - a));
+        if (r.getWidth() > 2.0f)
+        {
+            g.setColour (Theme::accent.withAlpha (0.06f * a));
+            g.fillRoundedRectangle (r, Theme::cornerRadius);
+            Path outline, dashed;
+            outline.addRoundedRectangle (r.reduced (0.5f), Theme::cornerRadius);
+            const float dashes[] { 4.0f, 3.0f };
+            PathStrokeType (Theme::lineWidth).createDashedStroke (dashed, outline, dashes, 2);
+            g.setColour (Theme::accent.withAlpha (0.85f * a));
+            g.fillPath (dashed);
+            g.setFont (Theme::uiFont (13.5f, "Semibold"));
+            phantom.name.draw ([&] (const String& s, float ta, float)
+            {
+                g.setColour (Theme::accent.withAlpha (0.75f * a * ta));
+                g.drawFittedText (s, r.reduced (4.0f, 0.0f).toNearestInt(), Justification::centred, 1, 0.7f);
+            });
+        }
+    }
     for (int i = 0; i < (int) vis.size(); ++i)
         if (! (reordering && validSlot (downSlot) && i == downSlot))
             paintSlot (g, vis[(size_t) i], 1.0f);
@@ -799,6 +951,12 @@ bool ChordStrip::tickAnimations (float dt)
     const auto spans = layout (order);
     for (size_t k = 0; k < order.size(); ++k)
     {
+        if (order[k] == phantomSlot)
+        {
+            phantom.x.setTarget (spans[k].x);
+            phantom.w.setTarget (spans[k].w);
+            continue;
+        }
         auto& v = vis[(size_t) order[k]];
         v.w.setTarget (spans[k].w);
         if (reordering && order[k] == downSlot)
@@ -848,6 +1006,10 @@ bool ChordStrip::tickAnimations (float dt)
         moving = v.chipText.tick (dt) || moving;
         moving = v.overrideText.tick (dt) || moving;
     }
+
+    for (auto* a : { &phantom.x, &phantom.w, &phantom.appear })
+        moving = AnimUtil::tick (*a, dt) || moving;
+    moving = phantom.name.tick (dt) || moving;
 
     for (auto& ghost : ghosts)
         moving = AnimUtil::tick (ghost.appear, dt) || moving;

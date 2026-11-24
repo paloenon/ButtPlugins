@@ -1,7 +1,7 @@
 # ChordButt – chord generator MIDI FX for Logic Pro
 
 ChordButt is an Audio Unit **MIDI FX** plugin built with JUCE (C++). It sits in front
-of any software instrument. You click chords from the current key, arrange them into a
+of any software instrument. You audition chords from the current key, drag them into a
 progression, or pick one from a library of about 200. You hear everything through the
 instrument on that track, and you drag the result into Logic as a MIDI region.
 
@@ -13,13 +13,16 @@ instrument on that track, and you drag the result into Logic as a MIDI region.
 - **Pads**: 14 chords for the key.
   - Top row: the diatonic chords.
   - Bottom row: sus, borrowed and secondary-dominant colour chords.
-  - Press a pad to hear the chord. Release it to add the chord to the strip, or to replace
-    the selected slot. Hold ⌥ while releasing to only listen. Move off the pad before
-    releasing to cancel.
+  - Click a pad to hear the chord. Clicking only previews; it never changes the strip.
+  - Drag a pad onto the strip to add it. A placeholder opens where the chord will land and
+    the other chords slide aside, so you choose the position. Dropping elsewhere does nothing.
 - **Shape**: these knobs set the voicing of the chords.
   - **Voicing** sets the inversion. While a strip slot is selected, it sets that one
     chord's inversion only.
-  - **Spread** opens the voicing up.
+  - **Spread** has five steps that spread the chord over more octaves:
+    **Close** (all notes together), **Bass** (root moves to a bass note below the chord),
+    **Open** (bass plus a wider upper chord), **Deep** (the bass an octave lower) and
+    **Wide** (deep bass plus its fifth, like a pianist's left hand).
   - **Octave** moves the chords up or down.
   - **Complexity** adds extensions: triads, 7ths, 9ths, and 11ths/13ths.
 - **Style**: how the progression is played.
@@ -64,7 +67,7 @@ exactly what you drag out.
 1. Create a **Software Instrument** track and load an instrument, e.g. a piano or a pad.
 2. On that channel strip, click the empty **MIDI FX** slot above the instrument, then
    choose **Audio Units → MyPlugins → ChordButt**.
-3. Select the track, open the plugin window and click pads. You hear the chords through
+3. Select the track, open the plugin window and click pads to hear them. You hear the chords through
    the instrument. Logic doesn't need to be playing, but while Logic is stopped it only
    runs a track's MIDI FX when the track is **selected** (or record-enabled). If nothing
    sounds, ChordButt shows "Select the track in Logic to hear previews".

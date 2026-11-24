@@ -6,7 +6,9 @@
 
 // The progression strip at the bottom: Play/Stop, slots sized by length (select, length chip,
 // remove, drag to reorder, drag out of the window = MIDI file) and the DRAG MIDI handle.
-class ChordStrip : public juce::Component, public Animated
+// Chords are added by dragging a pad onto the strip: a placeholder opens where the chord will
+// land and the other slots slide aside.
+class ChordStrip : public juce::Component, public Animated, public juce::DragAndDropTarget
 {
 public:
     static constexpr int height = 88;
@@ -48,7 +50,20 @@ public:
     explicit ChordStrip (ChordButtProcessor&);
 
     void refresh();                        // strip or parameters changed (names, lengths, count)
-    void addChord (const cb::RelChord&);   // replace the selected slot, else append (border flash when full)
+    bool insertChord (int index, const cb::RelChord&);   // false (border flash) when the strip is full
+    void addChord (const cb::RelChord& c) { insertChord ((int) vis.size(), c); }
+
+    // Drag description for a pad drag (see PadGrid) and its decoding.
+    static juce::var padDragDescription (const cb::RelChord&, const juce::String& displayName);
+    static bool decodePadDrag (const juce::var& description, cb::RelChord& chord, juce::String& displayName);
+
+    // juce::DragAndDropTarget: pads dropped here are inserted at the placeholder.
+    bool isInterestedInDragSource (const SourceDetails&) override;
+    void itemDragEnter (const SourceDetails&) override;
+    void itemDragMove (const SourceDetails&) override;
+    void itemDragExit (const SourceDetails&) override;
+    void itemDropped (const SourceDetails&) override;
+    int getInsertIndex() const { return insertIndex; }   // -1 = no pad drag over the strip (snapshots/tests)
 
     int getSelected() const { return selected; }
     void setSelected (int index);          // -1 = none
@@ -97,8 +112,10 @@ private:
     juce::Rectangle<float> well() const;                // the recessed slot area
     juce::Rectangle<float> slotArea() const;            // well minus its padding
     float barWidth (double totalBars) const;
+    static constexpr int phantomSlot = -2;              // entry in an order: the pad-drop placeholder (1 bar)
     std::vector<Span> layout (const std::vector<int>& order) const;
-    std::vector<int> displayOrder() const;              // strip order, or the prospective reorder
+    std::vector<int> displayOrder() const;              // strip order, or the prospective reorder / pad drop
+    int insertIndexAt (float x) const;                  // nearest gap between committed slots
     juce::Rectangle<float> slotRect (const SlotVis&) const;
     juce::Rectangle<float> removeRect (juce::Rectangle<float> slot) const;
     juce::Rectangle<float> chipRect (juce::Rectangle<float> slot, float longForm) const;
@@ -125,6 +142,8 @@ private:
 
     std::vector<SlotVis> vis;        // parallel to processor.strip().slots()
     std::vector<SlotVis> ghosts;     // removed slots fading out
+    SlotVis phantom;                 // placeholder while a pad is dragged over the strip
+    int insertIndex = -1;
     int selected = -1, hovered = -1;
     cb::Anim flash, empty, playheadAlpha;
     float flashHold = 0.0f;

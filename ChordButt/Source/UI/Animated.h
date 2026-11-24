@@ -15,15 +15,18 @@ struct Animated
 namespace AnimUtil
 {
     // Ticks `anim`, mirrors its value into the component property `id` (read by the
-    // LookAndFeel) and returns true when the drawn value changed.
+    // LookAndFeel) and returns true when the drawn value changed. "Changed" is measured against
+    // the value last written to the property, not the anim's previous value: callers may snap()
+    // the anim before ticking (e.g. a knob following the mouse), which would otherwise look like
+    // "no change" and leave the drawn value stale.
     inline bool tickProperty (juce::Component& c, cb::Anim& anim, const juce::Identifier& id, float dt)
     {
-        const float before = anim.value;
         const bool moving = anim.tick (dt);
-        const bool changed = moving || ! juce::exactlyEqual (anim.value, before);
-        if (changed || ! c.getProperties().contains (id))
-            c.getProperties().set (id, anim.value);
-        return changed;
+        auto& props = c.getProperties();
+        const bool stale = ! props.contains (id) || ! juce::exactlyEqual ((float) props[id], anim.value);
+        if (stale)
+            props.set (id, anim.value);
+        return moving || stale;
     }
 
     inline float property (const juce::Component& c, const juce::Identifier& id, float fallback = 0.0f)

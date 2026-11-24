@@ -6,9 +6,9 @@
 #include "Plugin/PluginProcessor.h"
 #include "UI/ChordLookAndFeel.h"
 
-// 2 x 7 chord pads built from the processor's current palette. Press = audition through MIDI out;
-// release over the pad = commit the auditioned chord (append to the strip, or replace the selected
-// slot) unless ⌥ is held; release outside the pad cancels.
+// 2 x 7 chord pads built from the processor's current palette. Press = audition through MIDI out
+// (a click only previews). Dragging a pad onto the chord strip adds it there, at the position where
+// it is dropped (see ChordStrip's drop placeholder).
 class PadGrid : public juce::Component
 {
 public:
@@ -24,6 +24,7 @@ public:
 
         void paint (juce::Graphics&) override;
         void mouseDown (const juce::MouseEvent&) override;
+        void mouseDrag (const juce::MouseEvent&) override;
         void mouseUp (const juce::MouseEvent&) override;
         bool tickAnimations (float dt) override;
 
@@ -32,7 +33,7 @@ public:
         const int index;
         FadeText name, roman;
         cb::Anim press, hover;
-        bool held = false, forcedHighlight = false;
+        bool held = false, dragging = false, forcedHighlight = false;
     };
 
     explicit PadGrid (ChordButtProcessor&);
@@ -40,21 +41,19 @@ public:
     // Re-reads the palette (key / scale / complexity); changed labels cross-fade.
     void refresh (bool animate = true);
 
-    // Released without ⌥: the pad's chord as stored in the strip (PadChord::base, before complexity; the strip applies
-    // the current complexity itself, so turning Complexity later still re-voices it).
-    std::function<void (const cb::RelChord&)> onPadCommitted;
-
     Pad& getPad (int index) { return *pads[index]; }
     void resized() override;
 
 private:
     void padPressed (int index);
-    // inside: released over the pad (outside = cancel). auditionOnly: ⌥ held.
-    void padReleased (bool inside, bool auditionOnly);
+    void padReleased();
+    // Starts the drag of the pressed chord (PadChord::base: the strip applies the current complexity
+    // itself, so turning Complexity later still re-voices it).
+    void startPadDrag (Pad&);
 
     ChordButtProcessor& processor;
     juce::OwnedArray<Pad> pads;
-    std::vector<cb::PadChord> palette;   // current complexity (PadChord::base is what a click stores)
+    std::vector<cb::PadChord> palette;   // current complexity (PadChord::base is what a drag carries)
     std::optional<cb::RelChord> pressedChord;   // captured on mouseDown: the chord that was auditioned
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PadGrid)

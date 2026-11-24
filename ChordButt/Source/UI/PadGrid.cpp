@@ -1,4 +1,5 @@
 #include "UI/PadGrid.h"
+#include "UI/ChordStrip.h"
 #include "UI/Theme.h"
 #include "Core/Voicing.h"
 
@@ -86,15 +87,25 @@ void PadGrid::Pad::paint (Graphics& g)
 void PadGrid::Pad::mouseDown (const MouseEvent&)
 {
     held = true;
+    dragging = false;
     owner.padPressed (index);
 }
 
-void PadGrid::Pad::mouseUp (const MouseEvent& e)
+void PadGrid::Pad::mouseDrag (const MouseEvent& e)
+{
+    if (! held || dragging || e.getDistanceFromDragStart() < 6)
+        return;
+    dragging = true;
+    owner.startPadDrag (*this);
+}
+
+void PadGrid::Pad::mouseUp (const MouseEvent&)
 {
     if (! held)
         return;
     held = false;
-    owner.padReleased (getLocalBounds().contains (e.getPosition()), e.mods.isAltDown());
+    dragging = false;
+    owner.padReleased();   // a click only previews; adding happens by dropping on the strip
 }
 
 bool PadGrid::Pad::tickAnimations (float dt)
@@ -159,15 +170,33 @@ void PadGrid::padPressed (int index)
     processor.preview().auditionOn (cb::voiceChord (chord, globalVoicing (processor.apvts)));
 }
 
-void PadGrid::padReleased (bool inside, bool auditionOnly)
+void PadGrid::padReleased()
 {
     processor.preview().auditionOff();
-    const auto chord = pressedChord;
     pressedChord.reset();
-    if (! chord || ! inside || auditionOnly)
+}
+
+void PadGrid::startPadDrag (Pad& pad)
+{
+    // The chord was heard on press; stop it so a long drag doesn't hold the notes.
+    processor.preview().auditionOff();
+    if (! pressedChord)
         return;
-    if (onPadCommitted)
-        onPadCommitted (*chord);
+
+    auto* container = DragAndDropContainer::findParentDragContainerFor (this);
+    if (container == nullptr)
+        return;
+
+    const auto rel = cb::applyComplexity (*pressedChord, processor.scale(),
+                                          jlimit (0, 3, roundToInt (processor.apvts.getRawParameterValue ("complexity")->load())));
+    const auto name = Theme::pretty (cb::chordNameInKey (rel, processor.tonic(), processor.scale()));
+
+    // Drag image: the pad itself, slightly translucent.
+    const float scale = 2.0f;
+    auto img = pad.createComponentSnapshot (pad.getLocalBounds(), true, scale);
+    img.multiplyAllAlphas (0.85f);
+    container->startDragging (ChordStrip::padDragDescription (*pressedChord, name), &pad,
+                              ScaledImage (img, scale), true);
 }
 
 // =============================================================================================
@@ -230,7 +259,7 @@ VoicingPanel::VoicingPanel (ChordButtProcessor& p)
         static const char* names[] { "Root", "1st inv", "2nd inv", "3rd inv" };
         return String (names[jlimit (0, 3, roundToInt (v))]);
     };
-    spread.formatValue = [] (double v) { return v < 0.005 ? String ("Close") : String (roundToInt (v * 100.0)) + "% open"; };
+    spread.formatValue = [] (double v) { return String (cb::spreadLevelName (cb::spreadLevel ((float) v))); };
     octave.formatValue = [] (double v)
     {
         const int o = roundToInt (v);
