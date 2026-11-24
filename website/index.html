@@ -20,6 +20,7 @@
       <a href="#demo">Listen</a>
       <a href="#how">How it works</a>
       <a href="#library">Library</a>
+      <a href="#source">Source</a>
       <a class="nav-download" href="#download">Download</a>
     </nav>
   </header>
@@ -188,6 +189,21 @@
             <li>Open Logic Pro. On a Software Instrument track, click an empty MIDI FX slot and choose Audio Units › MyPlugins › ChordButt.</li>
           </ol>
           <p class="help">Not in the list? Open Logic Pro › Settings › Plug-in Manager, select ChordButt and click Reset &amp; Rescan Selection. No sound while Logic is stopped? Select the track: Logic only runs MIDI FX on the selected or record-enabled track.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="source" id="source" aria-labelledby="source-title">
+      <div class="source-text">
+        <h2 id="source-title">Open source</h2>
+        <p>The full source of ChordButt is on GitHub: the C++ and JUCE code, the chord library and the tests. Build it yourself, read how the voicings work, or open an issue if something sounds wrong.</p>
+      </div>
+      <div class="source-actions">
+        <a class="button button-quiet" href="https://github.com/paloenon/ButtPlugins">View the code on GitHub</a>
+        <p class="source-build">Build it from source:</p>
+        <div class="cmd cmd-light">
+          <pre><code id="build-text">git clone https://github.com/paloenon/ButtPlugins.git && cd ButtPlugins/ChordButt && ./build_mac.sh</code></pre>
+          <button class="copy" type="button" data-copy="build-text">Copy</button>
         </div>
       </div>
     </section>

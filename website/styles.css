@@ -349,6 +349,24 @@ pre code { display: block; padding: .7rem .85rem; white-space: pre; overflow-wra
   .download-card { grid-template-columns: 1fr; }
 }
 
+/* ---------- open source ---------- */
+
+.source {
+  max-width: 78rem; margin: 0 auto;
+  padding: 0 var(--gutter) clamp(4rem, 8vw, 6rem);
+  display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 1.5rem 4rem; align-items: start;
+}
+.source-text p { margin-top: 1rem; color: var(--ink-soft); max-width: var(--measure); }
+.source-actions { min-width: 0; padding-top: .4rem; }
+.source-build { margin: 1.6rem 0 0; color: var(--ink-soft); font-size: .95rem; }
+.cmd-light code { background: var(--paper-deep); border-color: var(--rule); color: var(--ink); }
+.cmd-light .copy { background: var(--paper); color: var(--ink); border-color: var(--rule); }
+.cmd-light .copy:hover { border-color: var(--ink); }
+.cmd-light .copy.is-done { color: var(--ink); border-color: var(--ink); }
+@media (max-width: 800px) {
+  .source { grid-template-columns: 1fr; }
+}
+
 /* ---------- footer ---------- */
 
 .site-footer {
