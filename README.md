@@ -7,7 +7,7 @@ Audio Unit plugins for Logic Pro on macOS, built with [JUCE](https://juce.com).
 | [ChordButt](ChordButt/README.md) | MIDI FX chord generator. Audition chords in your key, build a progression, pick from 200 library progressions, play them as chords, rhythms or arpeggios, and drag the result into Logic as MIDI. |
 | [Buttcrusher](Buttcrusher/README.md) | Lo-fi bitcrusher effect. |
 
-Website and download: see [`website/`](website/).
+Website and download: https://chordbutt.vercel.app (source in [`website/`](website/)).
 
 ## Build
 

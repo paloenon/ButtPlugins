@@ -1,3 +1,5 @@
 build-mac/
 .superpowers/
 .DS_Store
+.vercel
+.env*
