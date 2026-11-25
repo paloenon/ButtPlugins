@@ -1,4 +1,4 @@
-/* ChordButt site.
+/* Cosmic Chords site.
    The page is light brushed aluminium; the plugin is the dark object sitting on it.
    Amber (the plugin's own accent) appears only where the plugin would use it: on the
    download action and inside the live demo. */
@@ -174,6 +174,11 @@ p { margin: 0; }
 .demo-item[aria-selected="true"] { background: var(--graphite-2); border-color: var(--amber); }
 .demo-item .name { font-weight: 650; font-size: 1.05rem; }
 .demo-item .chords { color: var(--on-graphite-dim); font-size: .9rem; }
+.topline-tag {
+  margin-left: .5rem; padding: .05rem .45rem; vertical-align: .12em;
+  border: 1px solid var(--amber); border-radius: 999px;
+  color: var(--amber); font-size: .72rem; font-weight: 600;
+}
 .demo-item[aria-selected="true"] .chords { color: var(--on-graphite); }
 
 .roll {
@@ -287,6 +292,30 @@ p { margin: 0; }
 .arp-list dt { font-weight: 700; font-size: 1.15rem; letter-spacing: -0.01em; }
 .arp-list dd { margin: .25rem 0 0; color: var(--ink-soft); }
 .styles-note { margin-top: 1.5rem; color: var(--ink-soft); max-width: 44rem; }
+
+/* ---------- cosmic pack ---------- */
+
+.pack {
+  display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 4fr); gap: clamp(2rem, 5vw, 5rem); align-items: center;
+  padding: clamp(2rem, 5vw, 4rem) var(--gutter) clamp(2rem, 5vw, 4rem) 0;
+}
+.pack-text { grid-column: 2; grid-row: 1; }
+.pack-text p { margin-top: 1rem; color: var(--ink-soft); max-width: var(--measure); }
+.pack-text strong { color: var(--ink); font-weight: 650; }
+.pack-names { list-style: none; margin: 1.5rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: .35rem; }
+.pack-names li { padding: .25rem .6rem; border: 1px solid var(--rule); border-radius: 999px; font-size: .9rem; background: rgba(255,255,255,.35); }
+.pack-names li:last-child { border-style: dashed; background: transparent; color: var(--ink-soft); }
+.pack-shot {
+  grid-column: 1; grid-row: 1;
+  margin: 0; overflow: hidden; background: var(--graphite);
+  border-radius: 0 var(--radius-object) var(--radius-object) 0;
+  box-shadow: 0 40px 80px -30px rgba(18, 22, 30, .5);
+}
+@media (max-width: 900px) {
+  .pack { grid-template-columns: 1fr; padding-left: var(--gutter); }
+  .pack-text, .pack-shot { grid-column: 1; grid-row: auto; }
+  .pack-shot { border-radius: var(--radius-object); }
+}
 
 /* ---------- library ---------- */
 

@@ -1,4 +1,4 @@
-# ChordButt (Chord Generator MIDI FX) Implementation Plan
+# Cosmic Chords (Chord Generator MIDI FX) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -13,9 +13,9 @@
 ## Global Constraints
 
 - Plugin type: AU MIDI FX, `AU_MAIN_TYPE kAudioUnitType_MIDIProcessor`, `IS_MIDI_EFFECT TRUE`, `NEEDS_MIDI_INPUT TRUE`, `NEEDS_MIDI_OUTPUT TRUE`, no audio buses. Formats: `AU Standalone` (Standalone only for visual UI checks).
-- Codes: company `"MyPlugins"`, manufacturer `Mypl`, plugin code `Chbt`, product name `"ChordButt"`, bundle id `com.myplugins.chordbutt`. auval id: `aumi Chbt Mypl` — must PASS.
+- Codes: company `"MyPlugins"`, manufacturer `Mypl`, plugin code `Chbt`, product name `"Cosmic Chords"`, bundle id `com.myplugins.cosmicchords`. auval id: `aumi Cosc Mypl` — must PASS.
 - Toolchain copied from `Buttcrusher/CMakeLists.txt`: JUCE `9.0.6` via FetchContent, `CMAKE_OSX_ARCHITECTURES "arm64;x86_64"`, `CMAKE_OSX_DEPLOYMENT_TARGET "11.0"`, `COPY_PLUGIN_AFTER_BUILD TRUE`, `JUCE_WEB_BROWSER=0`, `JUCE_USE_CURL=0`.
-- Project folder: `/Users/oliverzimmer/Documents/ButtPlugins/ChordButt/`. All paths below are relative to it unless they start with `docs/`.
+- Project folder: `/Users/oliverzimmer/Documents/ButtPlugins/CosmicChords/`. All paths below are relative to it unless they start with `docs/`.
 - All UI text in English.
 - Timing: 4/4 only; 1 bar = 4 beats; chord lengths only 0.5, 1 or 2 bars; host BPM, fallback 120 when unavailable or ≤ 0.
 - Strip holds at most 16 chords.
@@ -36,9 +36,9 @@
 ## File Structure
 
 ```
-ChordButt/
+CosmicChords/
   CMakeLists.txt            plugin target + ChordCore static lib + ChordCoreTests
-  build_mac.sh              build AU, refresh registrar, auval aumi Chbt Mypl
+  build_mac.sh              build AU, refresh registrar, auval aumi Cosc Mypl
   README.md
   Resources/library.json    ~200 progressions (embedded as BinaryData)
   Source/Core/              (no juce_gui; links juce_core + juce_audio_basics only)
@@ -73,15 +73,15 @@ ChordButt/
 - Create: `/Users/oliverzimmer/Documents/ButtPlugins/.gitignore` (`build-mac/`, `.superpowers/`, `.DS_Store`), `CMakeLists.txt`, `build_mac.sh`, `Source/Plugin/PluginProcessor.h/.cpp`, `Source/Plugin/PluginEditor.h/.cpp`, `Source/Core/Theory.cpp` (empty placeholder so the lib builds), `Tests/SmokeTests.cpp`
 
 **Interfaces:**
-- Produces: CMake variable `CHORD_CORE_SOURCES` (glob of `Source/Core/*.cpp`), added with `target_sources` to both the plugin target `ChordButt` and the test target. Test target: `juce_add_console_app(ChordCoreTests)` with `CHORD_CORE_SOURCES` + `Tests/*.cpp`, linking `juce::juce_core juce::juce_audio_basics Catch2::Catch2WithMain` (no `ChordCore` static lib: JUCE module targets are INTERFACE source libs and must not be linked into two binaries via a shared static lib), registered with `catch_discover_tests`. Include dir `Source` on both. Class `ChordButtProcessor`, `ChordButtEditor` (900×560).
+- Produces: CMake variable `CHORD_CORE_SOURCES` (glob of `Source/Core/*.cpp`), added with `target_sources` to both the plugin target `Cosmic Chords` and the test target. Test target: `juce_add_console_app(ChordCoreTests)` with `CHORD_CORE_SOURCES` + `Tests/*.cpp`, linking `juce::juce_core juce::juce_audio_basics Catch2::Catch2WithMain` (no `ChordCore` static lib: JUCE module targets are INTERFACE source libs and must not be linked into two binaries via a shared static lib), registered with `catch_discover_tests`. Include dir `Source` on both. Class `CosmicChordsProcessor`, `CosmicChordsEditor` (900×560).
 
 - [ ] **Step 1:** `git init` in `/Users/oliverzimmer/Documents/ButtPlugins`, add `.gitignore`.
 - [ ] **Step 2:** Write `CMakeLists.txt` per Global Constraints and the Interfaces above; Catch2 via FetchContent tag `v3.7.1`; `enable_testing()` + `include(Catch)`.
 - [ ] **Step 3:** `Tests/SmokeTests.cpp`: `TEST_CASE("smoke") { REQUIRE(1 + 1 == 2); }`.
 - [ ] **Step 4:** Processor: `BusesProperties()` with no buses, `isMidiEffect() == true`, `acceptsMidi/producesMidi == true`, `processBlock` leaves MIDI untouched (passthrough). Editor paints `Theme` bg only.
-- [ ] **Step 5:** `build_mac.sh` = Buttcrusher's script with target `ChordButt_AU`, log `/tmp/chordbutt_auval.log`, `auval -v aumi Chbt Mypl`, and exit code 1 when auval fails.
-- [ ] **Step 6:** Run `cmake -B build-mac -G Xcode && cmake --build build-mac --config Debug --target ChordCoreTests && ctest --test-dir build-mac -C Debug` → `100% tests passed`. Run `./build_mac.sh` → `auval: PASSED`, `~/Library/Audio/Plug-Ins/Components/ChordButt.component` exists.
-- [ ] **Step 7:** Commit `chore: scaffold ChordButt MIDI FX`.
+- [ ] **Step 5:** `build_mac.sh` = Buttcrusher's script with target `CosmicChords_AU`, log `/tmp/cosmicchords_auval.log`, `auval -v aumi Cosc Mypl`, and exit code 1 when auval fails.
+- [ ] **Step 6:** Run `cmake -B build-mac -G Xcode && cmake --build build-mac --config Debug --target ChordCoreTests && ctest --test-dir build-mac -C Debug` → `100% tests passed`. Run `./build_mac.sh` → `auval: PASSED`, `~/Library/Audio/Plug-Ins/Components/CosmicChords.component` exists.
+- [ ] **Step 7:** Commit `chore: scaffold Cosmic Chords MIDI FX`.
 
 ---
 
@@ -250,7 +250,7 @@ std::vector<VoicedSlot> voiceStrip (const Strip&, int tonicPc, Scale, int comple
 ```cpp
 juce::MidiFile buildMidiFile (const std::vector<NoteEvent>&, double bpm);   // 960 PPQ, 1 track, ch 1
 juce::File writeTempMidi (const std::vector<NoteEvent>&, double bpm, const juce::String& baseName);
-// writes <tmp>/ChordButt/<baseName>.mid (baseName sanitised, e.g. "Am9-Fmaj9-Cmaj7-G6"), overwrites, returns the file
+// writes <tmp>/CosmicChords/<baseName>.mid (baseName sanitised, e.g. "Am9-Fmaj9-Cmaj7-G6"), overwrites, returns the file
 double effectiveBpm (std::optional<double> hostBpm);  // value if > 0 else 120
 ```
 Track contents: tempo meta at tick 0, time signature 4/4 at tick 0, note on/off pairs (note-off before note-on at equal ticks), end-of-track after the last note-off.
@@ -298,7 +298,7 @@ State logic lives in Core so it is testable without instantiating the plugin: `j
 - Consumes: Tasks 2–8.
 - Produces (used by UI tasks):
 ```cpp
-class ChordButtProcessor : public juce::AudioProcessor {
+class CosmicChordsProcessor : public juce::AudioProcessor {
 public:
     juce::AudioProcessorValueTreeState apvts;
     cb::Strip& strip();  void stripChanged();      // message thread; rebuilds preview sequence
@@ -326,7 +326,7 @@ Parameter or strip changes (via `AudioProcessorValueTreeState::Listener` + `stri
 
 ### Task 10: Progression library
 
-**Files:** Create `Resources/library.json`, `Source/Core/Library.h/.cpp`, `Tests/LibraryTests.cpp`; Modify `CMakeLists.txt` (`juce_add_binary_data(ChordButtData SOURCES Resources/library.json)`, linked into plugin and tests), `Source/Plugin/PluginProcessor.cpp` (`library()`, `loadLibraryEntry`)
+**Files:** Create `Resources/library.json`, `Source/Core/Library.h/.cpp`, `Tests/LibraryTests.cpp`; Modify `CMakeLists.txt` (`juce_add_binary_data(CosmicChordsData SOURCES Resources/library.json)`, linked into plugin and tests), `Source/Plugin/PluginProcessor.cpp` (`library()`, `loadLibraryEntry`)
 
 **Interfaces:**
 ```cpp
@@ -366,16 +366,16 @@ struct Anim { float value = 0, target = 0; void snap (float v); void setTarget (
 // Theme.h: namespace Theme { colours from Global Constraints; juce::Font title(), label(), value(); }
 // ChordLookAndFeel: drawRotarySlider = thin 2px track in `line`, value arc in accent with soft glow
 //   (glow alpha driven by an Anim on hover/drag via slider properties "glow"), matte surface2 body, 2px text pointer.
-// HeaderBar(ChordButtProcessor&): "CHORDBUTT" wordmark (text colour, letter-spaced, accent only on the hover underline),
+// HeaderBar(CosmicChordsProcessor&): "COSMIC CHORDS" wordmark (text colour, letter-spaced, accent only on the hover underline),
 //   ComboBoxes for root & scale (ComboBoxAttachment), TextButton "LIBRARY" (toggle, accent fill when open, animated).
 //   std::function<void(bool)> onLibraryToggled;
-// ChordButtEditor: owns a juce::VBlankAttachment that calls tickAnimations(dt) on all child components implementing
+// CosmicChordsEditor: owns a juce::VBlankAttachment that calls tickAnimations(dt) on all child components implementing
 //   struct Animated { virtual bool tickAnimations (float dt) = 0; }  and repaints only those returning true.
 ```
 
 - [ ] **Step 1: Failing tests (`AnimTests.cpp`):** after `setTarget(1)` and ticks totalling 0.12 s value ≈ 0.632 (±0.01); after 1 s value == 1 and `tick` returns false; `snap` sets both.
 - [ ] **Step 2:** Run → FAIL. **Step 3:** Implement `Anim`, Theme, LookAndFeel, HeaderBar, editor animation driver; editor 900×560, header 56 px.
-- [ ] **Step 4:** Tests PASS; build `ChordButt_Standalone`, launch it, take a screenshot; check: only one saturated colour visible, knob glow fades in/out smoothly on hover (record two screenshots 60 ms apart to see an intermediate state).
+- [ ] **Step 4:** Tests PASS; build `CosmicChords_Standalone`, launch it, take a screenshot; check: only one saturated colour visible, knob glow fades in/out smoothly on hover (record two screenshots 60 ms apart to see an intermediate state).
 - [ ] **Step 5:** Commit `feat(ui): theme, animation driver, header`.
 
 ---
@@ -406,6 +406,6 @@ struct Anim { float value = 0, target = 0; void snap (float v); void setTarget (
 **Behaviour:** Drawer covers the pad + style area (not header, not strip). Open/close animates `Anim` 0→1: translate from 24 px below + opacity 0 → in place + opacity 1, background behind it dims and blurs (render a cached snapshot of the pad area with `juce::ImageConvolutionKernel` blur once per open, then cross-fade). Left column: "GENRE" and "MOOD" lists (single-select each, click again to clear; selected item gets accent text + thin accent bar). Top: search `TextEditor` ("Search progressions…") and count label ("Lo-Fi · Melancholic · 17"). List (`juce::ListBox` with custom rows): ▶ preview button (sets preview sequence to the entry's events at current tonic/style, plays once, not looping; ▶ becomes ■ while playing), chord names resolved at current tonic, name, roman numerals. Row click → `loadLibraryEntry` → drawer stays open, row gets accent outline, strip animates in the new slots. Esc or LIBRARY button closes.
 
 - [ ] **Step 1:** Implement drawer; Standalone screenshots: closed, mid-animation, open with Lo-Fi + Melancholic filter.
-- [ ] **Step 2:** README: what it is, build (`./build_mac.sh`), load in Logic (MIDI FX slot → Audio Units → MyPlugins → ChordButt), drag workflow, Plug-in Manager rescan hint.
-- [ ] **Step 3: Full verification:** `ctest --test-dir build-mac -C Debug` → 100% passed; `./build_mac.sh` → `auval: PASSED`; `lipo -archs ~/Library/Audio/Plug-Ins/Components/ChordButt.component/Contents/MacOS/ChordButt` → `x86_64 arm64`; no warnings from `Source/` in the Release build log.
+- [ ] **Step 2:** README: what it is, build (`./build_mac.sh`), load in Logic (MIDI FX slot → Audio Units → MyPlugins → Cosmic Chords), drag workflow, Plug-in Manager rescan hint.
+- [ ] **Step 3: Full verification:** `ctest --test-dir build-mac -C Debug` → 100% passed; `./build_mac.sh` → `auval: PASSED`; `lipo -archs ~/Library/Audio/Plug-Ins/Components/CosmicChords.component/Contents/MacOS/Cosmic Chords` → `x86_64 arm64`; no warnings from `Source/` in the Release build log.
 - [ ] **Step 4:** Commit `feat(ui): progression library drawer; docs`.

@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ChordButt – chord generator for Logic Pro</title>
-  <meta name="description" content="ChordButt is a free MIDI FX plugin for Logic Pro. Audition chords in your key through your own instrument, build a progression and drag it into your track as MIDI.">
+  <title>Cosmic Chords – chord generator for Logic Pro</title>
+  <meta name="description" content="Cosmic Chords is a free MIDI FX plugin for Logic Pro. Audition chords in your key through your own instrument, build a progression, add a top line from the Cosmic Pack and drag it into your track as MIDI.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,300..800&display=swap" rel="stylesheet">
@@ -15,10 +15,11 @@
   <a class="skip" href="#main">Skip to content</a>
 
   <header class="site-header">
-    <a class="wordmark" href="#top" aria-label="ChordButt home">ChordButt</a>
+    <a class="wordmark" href="#top" aria-label="Cosmic Chords home">Cosmic Chords</a>
     <nav aria-label="Main">
       <a href="#demo">Listen</a>
       <a href="#how">How it works</a>
+      <a href="#pack">Cosmic Pack</a>
       <a href="#library">Library</a>
       <a href="#source">Source</a>
       <a class="nav-download" href="#download">Download</a>
@@ -30,16 +31,16 @@
     <section class="hero" id="top">
       <div class="hero-copy">
         <h1>Find the chords. Drag&nbsp;them into&nbsp;Logic.</h1>
-        <p class="lede">ChordButt is a MIDI FX plugin for Logic Pro. Pick a key, audition chords through your own instrument, build a progression, and drag it into your track as a MIDI region.</p>
+        <p class="lede">Cosmic Chords is a MIDI FX plugin for Logic Pro. Pick a key, audition chords through your own instrument, build a progression, and drag it into your track as a MIDI region.</p>
         <div class="hero-actions">
-          <a class="button button-primary" href="downloads/ChordButt-1.0-macOS.zip" download>Download for macOS</a>
+          <a class="button button-primary" href="downloads/CosmicChords-1.1-macOS.zip" download>Download for macOS</a>
           <a class="button button-quiet" href="#demo">Hear it first</a>
         </div>
-        <p class="fineprint">Free. Version 1.0, 4.9 MB. Audio Unit for Logic Pro on macOS 11 or later, Apple Silicon and Intel.</p>
+        <p class="fineprint">Free. Version 1.1, 4.9 MB. Audio Unit for Logic Pro on macOS 11 or later, Apple Silicon and Intel.</p>
       </div>
       <figure class="hero-shot">
         <img src="assets/strip.png" width="1800" height="1120"
-             alt="The ChordButt window: fourteen chord pads for A minor, the Shape and Chords panels, and a strip with Am7, Fmaj7, Cmaj7 and G7 playing.">
+             alt="The Cosmic Chords window: fourteen chord pads for A minor, the Shape and Chords panels, and a strip with Am7, Fmaj7, Cmaj7 and G7 playing.">
       </figure>
     </section>
 
@@ -48,7 +49,7 @@
       <div class="demo-inner">
         <div class="demo-head">
           <h2 id="demo-title">Hear a few from the library</h2>
-          <p>Six of the 200 progressions, voiced the way ChordButt voices them with Spread on Open. Your browser plays them with a simple synth; in Logic you hear your own instrument.</p>
+          <p>Six of the 220 progressions, voiced the way Cosmic Chords voices them. The first three come from the Cosmic Pack and play their top line too. Your browser uses a simple synth; in Logic you hear your own instrument.</p>
         </div>
         <div class="demo-body">
           <ul class="demo-list" id="demo-list" role="listbox" aria-label="Progressions"></ul>
@@ -58,8 +59,8 @@
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path class="icon-play" d="M8 5.5v13l10.5-6.5z"/><path class="icon-stop" d="M7 7h10v10H7z"/></svg>
               </button>
               <div class="roll-title">
-                <span id="roll-name">Rainy Window</span>
-                <span id="roll-meta" class="roll-meta">Lo-Fi in A minor</span>
+                <span id="roll-name">Nebula Drift</span>
+                <span id="roll-meta" class="roll-meta">Cosmic Pack in C major, with top line</span>
               </div>
             </div>
             <canvas id="roll-canvas" width="1200" height="420" role="img" aria-label="Piano roll of the selected progression"></canvas>
@@ -135,15 +136,32 @@
       <p class="styles-note">Rhythm mode adds Stabs, Offbeat, Pulse 8ths, Charleston and Push. Every pattern follows your project tempo.</p>
     </section>
 
+    <section class="pack" id="pack" aria-labelledby="pack-title">
+      <div class="pack-text">
+        <h2 id="pack-title">The Cosmic Pack: progressions that come with a melody</h2>
+        <p>Twenty progressions that go past the usual four chords: borrowed chords, diminished passing chords, tritone subs, Lydian and Phrygian colour, a Neapolitan or two. Each one comes with a top line, a melody written for those exact chords.</p>
+        <p>Load one from the library and the melody follows each chord. Reorder the chords and their melody moves with them. Keep <strong>Top line</strong> on to hear it and to drag it into Logic with the chords, or switch it off and write your own.</p>
+        <ul class="pack-names">
+          <li>Nebula Drift</li><li>Orbit of Venus</li><li>Lydian Satellites</li><li>Event Horizon</li>
+          <li>Starlight Bossa</li><li>Retrograde Motion</li><li>Red Giant Blues</li><li>Dark Matter</li>
+          <li>and 12 more</li>
+        </ul>
+      </div>
+      <figure class="pack-shot">
+        <img src="assets/cosmic-pack-loaded.png" width="1800" height="1120" loading="lazy"
+             alt="Cosmic Chords with Nebula Drift loaded: Amaj9, Fmaj7, Dmaj9 and Dm6 in the strip, each slot showing a small amber contour of its melody, and the Top line switch on.">
+      </figure>
+    </section>
+
     <section class="library" id="library" aria-labelledby="library-title">
       <div class="library-text">
-        <h2 id="library-title">200 progressions, sorted by genre and mood</h2>
+        <h2 id="library-title">220 progressions, sorted by genre and mood</h2>
         <p>Pick a genre, a mood, or both, and search by name or chord. Preview any progression before you load it; loading drops it into the strip in your key, ready to edit.</p>
         <div class="tag-groups">
           <div>
             <h3>Genres</h3>
             <ul class="tags">
-              <li>Pop</li><li>Hip-Hop/Trap</li><li>Lo-Fi</li><li>R&amp;B/Neo-Soul</li>
+              <li>Cosmic Pack</li><li>Pop</li><li>Hip-Hop/Trap</li><li>Lo-Fi</li><li>R&amp;B/Neo-Soul</li>
               <li>House/EDM</li><li>Cinematic</li><li>Jazz</li><li>Rock/Indie</li>
             </ul>
           </div>
@@ -165,9 +183,9 @@
     <section class="download" id="download" aria-labelledby="download-title">
       <div class="download-card">
         <div class="download-main">
-          <h2 id="download-title">Get ChordButt</h2>
+          <h2 id="download-title">Get Cosmic Chords</h2>
           <p class="price">Free</p>
-          <a class="button button-primary button-large" href="downloads/ChordButt-1.0-macOS.zip" download>Download ChordButt 1.0</a>
+          <a class="button button-primary button-large" href="downloads/CosmicChords-1.1-macOS.zip" download>Download Cosmic Chords 1.1</a>
           <ul class="specs">
             <li>Audio Unit MIDI FX for Logic Pro</li>
             <li>macOS 11 or later</li>
@@ -179,16 +197,16 @@
           <h3>Install</h3>
           <ol class="install">
             <li>Quit Logic Pro and unzip the download.</li>
-            <li>Copy <code>ChordButt.component</code> to <code>~/Library/Audio/Plug-Ins/Components</code>. In Finder, use Go&nbsp;›&nbsp;Go to Folder and paste the path.</li>
+            <li>Copy <code>CosmicChords.component</code> to <code>~/Library/Audio/Plug-Ins/Components</code>. In Finder, use Go&nbsp;›&nbsp;Go to Folder and paste the path. Had ChordButt before? Delete <code>ChordButt.component</code>: Cosmic Chords replaces it.</li>
             <li>This build isn't notarized by Apple yet, so macOS blocks it until you clear the download flag. In Terminal, run:
               <div class="cmd">
-                <pre><code id="cmd-text">xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/ChordButt.component</code></pre>
+                <pre><code id="cmd-text">xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/CosmicChords.component</code></pre>
                 <button class="copy" type="button" data-copy="cmd-text">Copy</button>
               </div>
             </li>
-            <li>Open Logic Pro. On a Software Instrument track, click an empty MIDI FX slot and choose Audio Units › MyPlugins › ChordButt.</li>
+            <li>Open Logic Pro. On a Software Instrument track, click an empty MIDI FX slot and choose Audio Units › MyPlugins › Cosmic Chords.</li>
           </ol>
-          <p class="help">Not in the list? Open Logic Pro › Settings › Plug-in Manager, select ChordButt and click Reset &amp; Rescan Selection. No sound while Logic is stopped? Select the track: Logic only runs MIDI FX on the selected or record-enabled track.</p>
+          <p class="help">Not in the list? Open Logic Pro › Settings › Plug-in Manager, select Cosmic Chords and click Reset &amp; Rescan Selection. No sound while Logic is stopped? Select the track: Logic only runs MIDI FX on the selected or record-enabled track.</p>
         </div>
       </div>
     </section>
@@ -196,13 +214,13 @@
     <section class="source" id="source" aria-labelledby="source-title">
       <div class="source-text">
         <h2 id="source-title">Open source</h2>
-        <p>The full source of ChordButt is on GitHub: the C++ and JUCE code, the chord library and the tests. Build it yourself, read how the voicings work, or open an issue if something sounds wrong.</p>
+        <p>The full source of Cosmic Chords is on GitHub: the C++ and JUCE code, the chord library and the tests. Build it yourself, read how the voicings work, or open an issue if something sounds wrong.</p>
       </div>
       <div class="source-actions">
         <a class="button button-quiet" href="https://github.com/paloenon/ButtPlugins">View the code on GitHub</a>
         <p class="source-build">Build it from source:</p>
         <div class="cmd cmd-light">
-          <pre><code id="build-text">git clone https://github.com/paloenon/ButtPlugins.git && cd ButtPlugins/ChordButt && ./build_mac.sh</code></pre>
+          <pre><code id="build-text">git clone https://github.com/paloenon/ButtPlugins.git && cd ButtPlugins/CosmicChords && ./build_mac.sh</code></pre>
           <button class="copy" type="button" data-copy="build-text">Copy</button>
         </div>
       </div>
@@ -210,7 +228,7 @@
   </main>
 
   <footer class="site-footer">
-    <p>ChordButt is made by ButtPlugins. Also from us: Buttcrusher, a lo-fi bitcrusher.</p>
+    <p>Cosmic Chords is made by ButtPlugins. Also from us: Buttcrusher, a lo-fi bitcrusher.</p>
     <p>Logic Pro is a trademark of Apple Inc.</p>
   </footer>
 

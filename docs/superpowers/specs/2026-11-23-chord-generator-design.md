@@ -1,6 +1,6 @@
 # Chord Generator (MIDI FX for Logic Pro) – Design
 
-Date: 2026-11-23 · Status: draft for approval · Working name: **ChordButt** (placeholder)
+Date: 2026-11-23 · Status: draft for approval · Working name: **Cosmic Chords** (placeholder)
 
 ## 1. Intent and why
 
@@ -141,7 +141,7 @@ UI layout: three layouts were mocked (pad grid / library browser / both). User p
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│ CHORDBUTT          [KEY A] [SCALE Minor]      [LIBRARY]    │
+│ COSMIC CHORDS          [KEY A] [SCALE Minor]      [LIBRARY]    │
 ├───────────────────────────────────────────────────────────┤
 │  [Am9] [Bø7] [Cmaj7] [Dm7] [Em7] [Fmaj9] [G6]              │  ← chord pads
 │  [Asus2] [E7] [Fm] [B♭maj7] [Dadd9] [C/G] [G7sus4]          │    (library drawer

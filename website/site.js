@@ -1,4 +1,4 @@
-// ChordButt site: the library demo (piano roll + Web Audio synth) and the Spread diagram.
+// Cosmic Chords site: the library demo (piano roll + Web Audio synth) and the Spread diagram.
 (() => {
   "use strict";
 
@@ -7,10 +7,16 @@
   const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
   // ---------------------------------------------------------------- demo data
-  const all = window.CHORDBUTT_DEMO || [];
-  const progressions = all.filter((p) => p.id !== "hiphop-001");   // two chords is too thin for a demo
+  const progressions = window.COSMIC_DEMO || [];
   const BPM = 92;
-  const BAR = (60 / BPM) * 4;   // seconds per chord (1 bar each)
+  const BEAT = 60 / BPM;   // seconds per beat
+
+  // Chord start times (in beats) and total length of a progression.
+  const timeline = (p) => {
+    let t = 0;
+    const starts = p.chords.map((c) => { const s = t; t += c.beats || 4; return s; });
+    return { starts, total: t };
+  };
 
   const list = document.getElementById("demo-list");
   const canvas = document.getElementById("roll-canvas");
@@ -26,7 +32,8 @@
 
   const describe = (p) => {
     const key = p.key.replace(" Minor", " minor").replace(" Major", " major");
-    return `${p.genre} in ${key}`;
+    const withTop = p.chords.some((c) => c.melody) ? ", with top line" : "";
+    return `${p.genre} in ${key}${withTop}`;
   };
 
   progressions.forEach((p, i) => {
@@ -37,6 +44,12 @@
     b.setAttribute("role", "option");
     b.innerHTML = `<span class="name"></span><span class="chords"></span>`;
     b.querySelector(".name").textContent = p.name;
+    if (p.chords.some((c) => c.melody)) {
+      const tag = document.createElement("span");
+      tag.className = "topline-tag";
+      tag.textContent = "Top line";
+      b.querySelector(".name").appendChild(tag);
+    }
     b.querySelector(".chords").textContent = p.chords.map((c) => c.name).join("  ");
     b.addEventListener("click", () => select(i, true));
     li.appendChild(b);
@@ -78,13 +91,16 @@
     const p = progressions[current];
     if (!p) return;
     const w = canvas.clientWidth, h = parseFloat(canvas.style.height) || canvas.height;
-    const notes = p.chords.flatMap((c) => c.notes);
+    const notes = p.chords.flatMap((c) => c.notes.concat((c.melody || []).map((m) => m[0])));
     const lo = Math.min(...notes) - 2, hi = Math.max(...notes) + 2;
     const rows = hi - lo + 1;
     const rowH = h / rows;
     const gutter = 34;
-    const colW = (w - gutter) / p.chords.length;
-    const activeChord = playheadSec >= 0 ? Math.floor(playheadSec / BAR) : -1;
+    const { starts, total } = timeline(p);
+    const beatW = (w - gutter) / total;
+    const beat = playheadSec >= 0 ? playheadSec / BEAT : -1;
+    let activeChord = -1;
+    starts.forEach((s, k) => { if (beat >= s) activeChord = k; });
 
     ctx2d.clearRect(0, 0, w, h);
 
@@ -107,14 +123,15 @@
     // Bar lines.
     for (let k = 1; k < p.chords.length; k++) {
       ctx2d.fillStyle = "rgba(255,255,255,0.07)";
-      ctx2d.fillRect(gutter + k * colW, 0, 1, h);
+      ctx2d.fillRect(gutter + starts[k] * beatW, 0, 1, h);
     }
 
     const amber = css("--amber");
     p.chords.forEach((c, k) => {
       const on = k === activeChord;
+      const colW = (c.beats || 4) * beatW;
       c.notes.forEach((n) => {
-        const x = gutter + k * colW + 3, y = h - (n - lo + 1) * rowH + 1;
+        const x = gutter + starts[k] * beatW + 3, y = h - (n - lo + 1) * rowH + 1;
         const bw = colW - 6, bh = Math.max(5, rowH - 1.5);
         ctx2d.save();
         if (on) { ctx2d.shadowColor = amber; ctx2d.shadowBlur = 12; }
@@ -125,8 +142,26 @@
       });
     });
 
+    // Top line: outlined notes, filled while they sound.
+    p.chords.forEach((c, k) => {
+      (c.melody || []).forEach(([n, s, len]) => {
+        const start = starts[k] + s;
+        const x = gutter + start * beatW + 1.5, y = h - (n - lo + 1) * rowH + 1;
+        const bw = Math.max(4, len * beatW - 3), bh = Math.max(5, rowH - 1.5);
+        const sounding = beat >= start && beat < start + len;
+        ctx2d.save();
+        roundRect(x, y, bw, bh, Math.min(4, bh / 2));
+        if (sounding) { ctx2d.shadowColor = amber; ctx2d.shadowBlur = 12; ctx2d.fillStyle = amber; ctx2d.fill(); }
+        ctx2d.strokeStyle = amber;
+        ctx2d.lineWidth = 1.5;
+        ctx2d.globalAlpha = sounding ? 1 : (beat > start ? 0.45 : 0.9);
+        ctx2d.stroke();
+        ctx2d.restore();
+      });
+    });
+
     if (playheadSec >= 0) {
-      const x = gutter + (playheadSec / BAR) * colW;
+      const x = gutter + beat * beatW;
       ctx2d.fillStyle = amber;
       ctx2d.fillRect(x, 0, 2, h);
     }
@@ -164,9 +199,11 @@
     master.connect(audio.destination);
 
     const nodes = [];
+    const { starts, total } = timeline(p);
+    const hasTop = p.chords.some((c) => c.melody);
     p.chords.forEach((c, k) => {
-      const start = t0 + k * BAR, end = start + BAR * 0.96;
-      const level = 0.16 / Math.sqrt(c.notes.length);
+      const start = t0 + starts[k] * BEAT, end = start + (c.beats || 4) * BEAT * 0.96;
+      const level = (hasTop ? 0.11 : 0.16) / Math.sqrt(c.notes.length);
       c.notes.forEach((n, i) => {
         const g = audio.createGain();
         g.gain.setValueAtTime(0, start);
@@ -190,7 +227,30 @@
       });
     });
 
-    playing = { startTime: t0, master, total: p.chords.length * BAR };
+    // Top line: a soft sine lead with a little vibrato, above the pad.
+    p.chords.forEach((c, k) => {
+      (c.melody || []).forEach(([n, s, len]) => {
+        const start = t0 + (starts[k] + s) * BEAT, end = start + len * BEAT * 0.92;
+        const g = audio.createGain();
+        g.gain.setValueAtTime(0, start);
+        g.gain.linearRampToValueAtTime(0.13, start + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.08, start + 0.35);
+        g.gain.setValueAtTime(0.08, Math.max(start + 0.36, end - 0.03));
+        g.gain.exponentialRampToValueAtTime(0.0001, end + 0.25);
+        g.connect(master);
+        const o = audio.createOscillator();
+        o.type = "sine";
+        o.frequency.value = freq(n);
+        const lfo = audio.createOscillator(), depth = audio.createGain();
+        lfo.frequency.value = 5;
+        depth.gain.value = 6;
+        lfo.connect(depth).connect(o.detune);
+        o.connect(g);
+        for (const osc of [o, lfo]) { osc.start(start); osc.stop(end + 0.3); nodes.push(osc); }
+      });
+    });
+
+    playing = { startTime: t0, master, total: total * BEAT };
     playBtn.classList.add("is-playing");
     playBtn.setAttribute("aria-label", "Stop");
     requestAnimationFrame(tick);
